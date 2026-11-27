@@ -8,6 +8,8 @@ Pages
   GET /sheet.pdf                the default pair; or ?p=<id>&p=<id>... for any selection,
                                 &answers=1 for an answers page, &view=1 to open it in the browser
   GET /health                   plain "ok", for Railway health checks
+  GET /manifest.webmanifest, /icon.svg, /apple-touch-icon.png, /icon-*.png
+                                home-screen app and tab icons (no password needed)
 
 JSON API (for the website redesign)
   GET /api/puzzles              {"default": [...], "puzzles": [...], "sources": [...], "warnings": [...]}
@@ -101,8 +103,19 @@ STYLE = """
 
 PAGE = """<!doctype html>
 <html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crossy</title><style>{style}</style></head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crossy</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Crossy">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>{style}</style></head>
 <body><main>
   <h1>Crossy {general}</h1>
   {general_text}
@@ -158,6 +171,28 @@ ERROR_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" conte
 <title>Crossy: something went wrong</title>
 <body style="font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1.25rem">
 <h1>Couldn't make the sheet</h1><p>{msg}</p><p><a href="/">Back</a></p></body>"""
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+STATIC = {                       # served without a password, so phones can fetch the icons
+    "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/favicon.ico": ("icon-192.png", "image/png"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+    "/icon-maskable-512.png": ("icon-maskable-512.png", "image/png"),
+}
+MANIFEST = {
+    "name": "Crossy", "short_name": "Crossy",
+    "description": "Guardian crosswords, ready to print",
+    "start_url": "/", "scope": "/", "display": "standalone",
+    "background_color": "#faf8f3", "theme_color": "#052962",
+    "icons": [
+        {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    ],
+}
 
 ID_RE = re.compile(r"^/api/puzzles/([a-z0-9-]+?-\d+)(\.pdf|/grid\.svg)?$")
 
@@ -308,6 +343,12 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/health":
             return self._send(200, "ok", "text/plain")
+        if url.path in STATIC:
+            name, ctype = STATIC[url.path]
+            with open(os.path.join(STATIC_DIR, name), "rb") as f:
+                return self._send(200, f.read(), ctype, cache="public, max-age=604800")
+        if url.path == "/manifest.webmanifest":
+            return self._send(200, json.dumps(MANIFEST), "application/manifest+json", cache="public, max-age=3600")
         if not PASSWORD and not OPEN:       # closed until a password is set (or OPEN_ACCESS=true)
             return self._send(503, "Locked: set SITE_PASSWORD (or OPEN_ACCESS=true) on this service in Railway.", "text/plain")
         if PASSWORD and not self._authed():
