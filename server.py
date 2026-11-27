@@ -78,12 +78,12 @@ STYLE = """
   h1 { font-size: 2rem; font-weight: 750; margin: 0; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; flex:1; min-width:0; }
   .top { display:flex; align-items:center; gap:.5rem; margin: 0 0 1.75rem; }
   h1 .logo { width: 2.1rem; height: 2.1rem; flex: none; margin-right: .2rem; box-shadow: 0 0 0 1.5px var(--ring); }   /* keeps the dark frame visible on a dark page */
-  h2 { font-size: 1.05rem; font-weight: 700; margin: 2rem 0 .3rem; display:flex; align-items:center; gap:.5rem; }
+  h2 { font-size: 1.05rem; font-weight: 700; margin: 1.35rem 0 .2rem; display:flex; align-items:center; gap:.5rem; }
   .sub { margin: 0 0 1.4rem; opacity: .8; }
   button { font-family: inherit; font-weight: 600; font-size: 1rem; line-height: 1; padding: .95rem 1.4rem; border-radius: .55rem;
            border: 2px solid var(--accent); background: var(--accent); color: var(--paper); cursor: pointer; }
   .row { display:flex; gap:1rem; flex-wrap: wrap; align-items:center; }
-  .opts.answers { margin: 0 0 1rem; }
+  .opts.answers { margin: 0 0 1.5rem; }
   .buttons { flex-wrap: nowrap; gap:.75rem; }
   .buttons button { flex: 1 1 0; min-width: 0; padding-left: .75rem; padding-right: .75rem; }
   button.alt { background: var(--tagbg); color: var(--accent); border-color: var(--tagbg); }
@@ -109,11 +109,18 @@ STYLE = """
   li .failed .box { width:1.25rem; height:1.25rem; flex:none; }
   a { color: var(--accent); }
   .more { font-size:.9rem; display:inline-block; margin-top:.6rem; }
-  #status { font-size: .95rem; min-height: 1.4em; margin-top: .7rem; }
+  #status { font-size: .95rem; margin-top: .7rem; }
+  #status:empty { display: none; }
   .readyhead { margin: 0 0 .3rem; font-weight: 650; }
-  #ready { list-style: disc; padding-left: 1.25rem; margin: 0 0 1.3rem; }
+  #ready { list-style: disc; padding-left: 1.25rem; margin: 0 0 1.1rem; }
   #ready li { border: 0; padding: .12rem 0; }
   #ready .meta { display: block; }
+  .rtop { display:flex; align-items:center; gap:.5rem; }
+  .rname { min-width: 0; }
+  /* the X lines up with the theme icon above: same width, same right-hand overhang */
+  .rx { margin:-.6rem -.6rem -.6rem auto; flex:none; width:2.5rem; height:2.5rem; padding:0; display:flex; align-items:center;
+        justify-content:center; background:transparent; color:var(--ink); border:0; border-radius:.55rem; opacity:.55; }
+  .rx:hover, .rx:focus-visible { opacity:1; background:var(--tagbg); }
   .listhead { margin: 2rem 0 .3rem; position: relative; display:flex; align-items:center; gap:.5rem; }
   .picker { position: relative; }
   #type { display:inline-flex; align-items:center; margin-left:-.6rem; padding:.35rem .6rem; cursor:pointer;
@@ -135,14 +142,15 @@ STYLE = """
   .showmore:hover { filter: brightness(.97); }
   .showmore[hidden] { display:none; }
   li[hidden] { display: none; }
-  .emailstrip { display:flex; align-items:center; gap:.75rem; margin-top:1.4rem; padding:.75rem .9rem; border-radius:.55rem;
+  .emailstrip { display:flex; align-items:center; gap:.75rem; margin-top:.9rem; padding:.75rem .9rem; border-radius:.55rem;
          background: var(--tagbg); color: var(--accent); text-decoration:none; font-size:.95rem; }
   .emailstrip span { flex:1; }
   .emailstrip svg { flex:none; }
   /* settings */
   .back { display:inline-flex; align-items:center; gap:.25rem; min-height:2.75rem; margin-left:-.35rem; font-weight:600;
          text-decoration:none; }
-  .setrow { display:flex; align-items:center; gap:.75rem; min-height:3.5rem; padding:.5rem 0; border-bottom:1px solid var(--rule); }
+  .setrow { display:flex; align-items:center; gap:.75rem; min-height:3rem; padding:.35rem 0; border-bottom:1px solid var(--rule); }
+  .setrow.last { border-bottom:0; }
   .setrow > .what { flex:1; }
   .switch { position:relative; flex:none; width:3.25rem; height:2rem; }
   .switch input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; z-index:1; }
@@ -169,11 +177,13 @@ STYLE = """
   .body.off { opacity: .4; }
   .recips li:last-child { border-bottom: 0; }
   button:disabled { opacity: .45; cursor: default; }
-  .addrow { display:flex; gap:.5rem; padding:.9rem 0 .25rem; }
+  .addrow { display:flex; gap:.5rem; padding:.5rem 0 .1rem; }
   .addrow input { flex:1; min-width:0; height:2.75rem; padding:0 .75rem; border-radius:.55rem; border:1px solid var(--rule);
          background:var(--paper); color:var(--ink); font:inherit; }
   button.soft { background:var(--tagbg); color:var(--accent); border-color:var(--tagbg); padding:0 1rem; height:2.75rem; }
   button.ghost { background:transparent; color:var(--accent); }
+  button.x.confirm { width:auto; opacity:1; padding:0 .8rem; border-radius:.55rem; background:var(--warnbg); color:var(--warn);
+         font-size:.9rem; font-weight:600; }
   button.x { background:none; border:0; color:var(--ink); opacity:.6; width:2.75rem; height:2.75rem; padding:0;
          display:flex; align-items:center; justify-content:center; }
   .notice { border-radius:.5rem; padding:.6rem .8rem; margin:0 0 1rem; background:var(--tagbg); color:var(--accent); }
@@ -284,14 +294,30 @@ PAGE = """<!doctype html>
     setTimeout(() => {{ s.textContent = ''; }}, 6000);
     return true;
   }}
-  // "Ready to download" lists whatever is ticked, in sheet order
+  // "Ready to download" lists whatever is ticked, in sheet order. With "Include answers" ticked, an A marks
+  // the ones that have answers; the X unticks one.
+  const X = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+  const answersBox = document.querySelector('input[name=answers]');
   function ready() {{
     const ticked = [...document.querySelectorAll('input[name=p]:checked')];
+    const withA = answersBox.checked;
     document.getElementById('ready').innerHTML = ticked.length
-      ? ticked.map(i => `<li>${{esc(i.dataset.name)}}<span class="meta">${{esc(i.dataset.sub)}}</span></li>`).join('')
+      ? ticked.map(i => `<li data-id="${{esc(i.value)}}"><span class="rtop"><span class="rname">${{esc(i.dataset.name)}}</span>`
+          + (withA && i.dataset.a ? '<span class="tag a" title="Answers available">A</span>' : '')
+          + `<button type="button" class="rx" aria-label="Remove ${{esc(i.dataset.name)}} from the list">${{X}}</button></span>`
+          + `<span class="meta">${{esc(i.dataset.sub)}}</span></li>`).join('')
       : '<li class="meta">Nothing ticked yet</li>';
   }}
+  document.getElementById('ready').addEventListener('click', e => {{
+    const b = e.target.closest('.rx');
+    if (!b) return;
+    const box = [...document.querySelectorAll('input[name=p]')].find(i => i.value === b.closest('li').dataset.id);
+    if (box) box.checked = false;
+    ready();
+  }});
+  answersBox.addEventListener('change', ready);
   document.querySelectorAll('input[name=p]').forEach(i => i.addEventListener('change', ready));
+  if (answersBox.checked) ready();      // a reload can leave it ticked
   // the heading picks which crosswords the list shows, 10 at a time
   const PAGE_SIZE = 10;
   const type = document.getElementById('type'), menu = document.getElementById('menu');
@@ -377,13 +403,13 @@ SETTINGS_PAGE = """<!doctype html>
 
       <h2>Puzzles</h2>
       <ul>{sources}</ul>
-      <div class="setrow">
+      <div class="setrow last">
         <span class="what">Include answers</span>
         <label class="switch"><input type="checkbox" name="answers" value="1" aria-label="Include answers"{answers}><span></span></label>
       </div>
     </div>
 
-    <div class="row" style="margin-top:1.75rem">
+    <div class="row" style="margin-top:1.25rem">
       <button type="submit" name="action" value="save">Save</button>
       <button type="submit" name="action" value="test" id="testbtn" class="ghost"{test_disabled}>Send a test now</button>
     </div>
@@ -391,6 +417,19 @@ SETTINGS_PAGE = """<!doctype html>
   </form>
 </main>
 <script>
+  // the first tap on an address's X turns it into "Remove"; a second tap removes it
+  document.querySelectorAll('button.x').forEach(b => {{
+    const icon = b.innerHTML;
+    let timer;
+    const reset = () => {{ clearTimeout(timer); b.classList.remove('confirm'); b.innerHTML = icon; }};
+    b.addEventListener('click', e => {{
+      if (b.classList.contains('confirm')) return;
+      e.preventDefault();
+      b.classList.add('confirm'); b.textContent = 'Remove';
+      timer = setTimeout(reset, 4000);
+    }});
+    document.addEventListener('click', e => {{ if (!e.composedPath().includes(b)) reset(); }});   // a tap elsewhere cancels
+  }});
   // switching the weekly email off greys out and locks everything under it (they still save as they were)
   const enabled = document.getElementById('enabled'), body = document.getElementById('body'), testBtn = document.getElementById('testbtn');
   enabled.addEventListener('change', () => {{
@@ -476,7 +515,7 @@ def _puzzle_row(s, checked):
         tags += '<span class="tag a" title="Answers available">A</span>'
     return (f'<li data-source="{_esc(s["source"])}"><label>'
             f'<input type="checkbox" name="p" value="{_esc(s["id"])}" data-name="{_esc(s.get("source_name") or s["title"])}" '
-            f'data-sub="{_esc(" - ".join(parts))}"{" checked" if checked else ""}>'
+            f'data-sub="{_esc(" - ".join(parts))}"{' data-a="1"' if _has_answers(s) else ""}{" checked" if checked else ""}>'
             f'<span class="what">{_esc(s.get("source_name") or s["title"])}<span class="meta">{meta}</span></span>'
             f'{tags}</label></li>')
 
@@ -488,11 +527,22 @@ def _failed_row(src, number, message):
             f'{w.badge()}</div>{w.text()}</li>')
 
 
+READY_X = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+           'stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>')
+
+
+def _has_answers(s):
+    return bool(s.get("explained") or s.get("solution_available"))
+
+
 def _ready_items(summaries):
+    """The "Ready to download" bullets: name (+ an A when answers are on and available) and an X to drop it."""
     if not summaries:
         return '<li class="meta">Nothing ticked yet</li>'
-    return "".join(f'<li>{_esc(s.get("source_name") or s["title"])}'
-                   f'<span class="meta">{_esc(" - ".join(_sub_parts(s)))}</span></li>' for s in summaries)
+    return "".join(
+        f'<li data-id="{_esc(s["id"])}"><span class="rtop"><span class="rname">{_esc(s.get("source_name") or s["title"])}</span>'
+        f'<button type="button" class="rx" aria-label="Remove {_esc(s.get("source_name") or s["title"])} from the list">{READY_X}</button></span>'
+        f'<span class="meta">{_esc(" - ".join(_sub_parts(s)))}</span></li>' for s in summaries)
 
 
 def _listing(lib, items, failed, defaults, order, single=None, page=None):

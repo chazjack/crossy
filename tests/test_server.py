@@ -64,8 +64,11 @@ class ServerTests(unittest.TestCase):
         code, _, body = self.get("/")
         page = body.decode()
         self.assertEqual(code, 200)
-        self.assertIn('<ul id="ready"><li>Guardian Quick crossword<span class="meta">Fri 27 Nov - No 17,648</span></li>'
-                      '<li>Guardian Quick Cryptic<span class="meta">Sat 21 Nov - No 138</span></li></ul>', page)
+        self.assertRegex(page, r'<ul id="ready"><li data-id="guardian-quick-17648"><span class="rtop"><span class="rname">'
+                               r'Guardian Quick crossword</span><button type="button" class="rx"[^>]*>.*?</button></span>'
+                               r'<span class="meta">Fri 27 Nov - No 17,648</span></li>'
+                               r'<li data-id="guardian-quick-cryptic-138">.*?<span class="meta">Sat 21 Nov - No 138</span></li></ul>')
+        self.assertIn('data-a="1"', page)                     # rows that have answers, for the A in the ready list
         self.assertRegex(page, r'value="guardian-quick-17648" [^>]*checked')
         self.assertRegex(page, r'value="guardian-quick-cryptic-138" [^>]*checked')
         self.assertNotRegex(page, r'value="guardian-quiptic-1409" [^>]*checked')

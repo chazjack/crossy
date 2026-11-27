@@ -176,6 +176,8 @@ class SettingsServerTests(unittest.TestCase):
         self.assertLess(page.index("Send to"), page.index("Delivery"))          # who it goes to comes first
         self.assertLess(page.index("Puzzles"), page.index("Include answers"))    # answers is one line under puzzles
         self.assertNotIn("<h2>Answers</h2>", page)
+        self.assertIn("classList.add('confirm')", page)                         # X asks "Remove" before removing
+        self.assertIn('<div class="setrow last">', page)                        # no line after Include answers
 
     def test_settings_page_when_off_is_locked(self):
         emailer.save(self.lib.store, dict(emailer.load(self.lib.store), enabled=False))
