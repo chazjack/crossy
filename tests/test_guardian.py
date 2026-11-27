@@ -47,7 +47,7 @@ class GuardianTests(unittest.TestCase):
 
     def test_registry(self):
         self.assertIn("guardian-quick", sources.ALL)
-        self.assertEqual(sources.ALL["guardian-quick"].name, "Quick crossword")
+        self.assertEqual(sources.ALL["guardian-quick"].name, "Guardian Quick crossword")
         for key in ("guardian-quick-cryptic", "guardian-quiptic", "guardian-cryptic", "guardian-prize",
                     "guardian-everyman", "guardian-speedy"):
             self.assertIn(key, sources.ALL)
@@ -58,7 +58,7 @@ class GuardianTests(unittest.TestCase):
     def test_normalise(self):
         p = normalise(RAW, sources.ALL["guardian-quick"])
         self.assertEqual(p["id"], "guardian-quick-100")
-        self.assertEqual(p["title"], "Quick crossword No 100")
+        self.assertEqual(p["title"], "Guardian Quick crossword No 100")
         self.assertIsNone(p["setter"])
         self.assertEqual(p["date"], "2026-11-27")
         self.assertEqual((p["cols"], p["rows"]), (5, 3))

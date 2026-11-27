@@ -14,13 +14,13 @@ from .guardian import GuardianSource
 
 def _guardian():
     return [
-        GuardianSource("quick", "Quick crossword", "Monday to Saturday", "quick"),
-        GuardianSource("quick-cryptic", "Quick Cryptic", "Saturdays", "cryptic"),
-        GuardianSource("quiptic", "Quiptic", "Mondays", "cryptic"),
-        GuardianSource("cryptic", "Cryptic", "Monday to Friday", "cryptic"),
-        GuardianSource("prize", "Prize", "Saturdays", "cryptic"),
-        GuardianSource("everyman", "Everyman", "Sundays", "cryptic"),
-        GuardianSource("speedy", "Speedy", "Sundays", "quick"),
+        GuardianSource("quick", "Guardian Quick crossword", "Monday to Saturday", "quick"),
+        GuardianSource("quick-cryptic", "Guardian Quick Cryptic", "Saturdays", "cryptic"),
+        GuardianSource("quiptic", "Guardian Quiptic", "Mondays", "cryptic"),
+        GuardianSource("cryptic", "Guardian Cryptic", "Monday to Friday", "cryptic"),
+        GuardianSource("prize", "Guardian Prize", "Saturdays", "cryptic"),
+        GuardianSource("everyman", "Guardian Everyman", "Sundays", "cryptic"),
+        GuardianSource("speedy", "Guardian Speedy", "Sundays", "quick"),
     ]
 
 

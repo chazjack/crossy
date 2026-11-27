@@ -50,30 +50,42 @@ def library():
 
 
 STYLE = """
-  :root { color-scheme: light dark; --ink:#1b1b1b; --paper:#faf8f3; --rule:#d9d4c7; --accent:#052962; --warn:#8a4b00; --warnbg:#fff3df; }
-  @media (prefers-color-scheme: dark) { :root { --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff; --warn:#ffcf8a; --warnbg:#3a2a12; } }
+  :root { color-scheme: light dark; --ink:#1b1b1b; --paper:#faf8f3; --rule:#d9d4c7; --accent:#052962;
+          --warn:#8a4b00; --warnbg:#fff3df; --tagbg:#e8eef8; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff;
+          --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; } }
   * { box-sizing: border-box; }
-  body { margin:0; font: 17px/1.5 Georgia, "Times New Roman", serif; color:var(--ink); background:var(--paper); }
-  main { max-width: 34rem; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
-  h1 { font-size: 2.1rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
-  h2 { font-size: 1.15rem; margin: 2rem 0 .4rem; }
-  .sub { margin: 0 0 1.5rem; opacity: .8; }
-  button { font: 600 1rem/1 system-ui, sans-serif; padding: .9rem 1.2rem; border-radius: .5rem; border: 2px solid var(--accent);
-           background: var(--accent); color: var(--paper); cursor: pointer; }
-  button.ghost { background: transparent; color: var(--accent); }
-  .row { display:flex; gap:.6rem; flex-wrap: wrap; align-items:center; }
-  .warn { font: .9rem/1.45 system-ui, sans-serif; color: var(--warn); background: var(--warnbg); border-radius: .5rem;
-          padding: .6rem .8rem; margin: 0 0 .6rem; }
+  body { margin:0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink);
+         background:var(--paper); -webkit-text-size-adjust: 100%; }
+  main { max-width: 34rem; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
+  h1 { font-size: 2rem; font-weight: 750; margin: 0 0 .35rem; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; }
+  h2 { font-size: 1.05rem; font-weight: 700; margin: 2rem 0 .3rem; display:flex; align-items:center; gap:.5rem; }
+  .sub { margin: 0 0 1.4rem; opacity: .8; }
+  button { font-family: inherit; font-weight: 600; font-size: 1rem; line-height: 1; padding: .95rem 1.4rem; border-radius: .55rem;
+           border: 2px solid var(--accent); background: var(--accent); color: var(--paper); cursor: pointer; }
+  .row { display:flex; gap:1rem; flex-wrap: wrap; align-items:center; }
+  .opts { display:flex; gap:.5rem; align-items:center; font-size: .95rem; cursor:pointer; }
+  .opts input, li input { width:1.25rem; height:1.25rem; accent-color: var(--accent); flex: none; margin:0; }
   ul { list-style: none; padding: 0; margin: 0; }
-  li label { display:flex; gap:.7rem; align-items:center; padding:.55rem 0; border-bottom: 1px solid var(--rule);
-             font: .98rem/1.3 system-ui, sans-serif; cursor:pointer; }
-  li input { width:1.25rem; height:1.25rem; accent-color: var(--accent); flex: none; }
-  .meta { opacity:.65; font-size:.85rem; }
-  .tag { font: 600 .72rem/1 system-ui, sans-serif; border:1px solid var(--rule); border-radius: 1rem; padding:.2rem .45rem; opacity:.8; }
-  .opts { font: .95rem system-ui, sans-serif; margin: 1rem 0; display:flex; gap:.5rem; align-items:center; }
+  li { border-bottom: 1px solid var(--rule); }
+  li > label, li > .failed { display:flex; gap:.75rem; align-items:center; padding:.6rem 0; cursor:pointer; }
+  .what { flex: 1; min-width: 0; }
+  .meta { opacity:.65; font-size:.85rem; display:block; }
+  .tag { font-weight: 700; font-size: .72rem; line-height: 1; border-radius: 1rem; padding:.28rem .5rem; flex:none;
+         background: var(--tagbg); color: var(--accent); }
+  .tag.a { width:1.5rem; height:1.5rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+  details.warn { display:inline-block; }
+  details.warn summary { list-style:none; cursor:pointer; width:1.5rem; height:1.5rem; border-radius:50%;
+         background: var(--warnbg); color: var(--warn); font-weight: 800; font-size: .9rem; line-height: 1.5rem; text-align:center; }
+  details.warn summary::-webkit-details-marker { display:none; }
+  details.warn[open] summary { outline: 2px solid var(--warn); }
+  .warntext { font-size:.88rem; font-weight: 400; letter-spacing: 0; color: var(--warn); background: var(--warnbg);
+         border-radius:.5rem; padding:.55rem .75rem; margin:.35rem 0 .5rem; }
+  li .failed { cursor:default; opacity:.85; }
+  li .failed .box { width:1.25rem; height:1.25rem; flex:none; }
   a { color: var(--accent); }
-  .more { font: .9rem system-ui, sans-serif; display:inline-block; margin-top:.5rem; }
-  #status { font: .95rem system-ui, sans-serif; min-height: 1.5em; margin-top: .8rem; }
+  .more { font-size:.9rem; display:inline-block; margin-top:.6rem; }
+  #status { font-size: .95rem; min-height: 1.4em; margin-top: .7rem; }
 """
 
 PAGE = """<!doctype html>
@@ -81,17 +93,15 @@ PAGE = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crossy</title><style>{style}</style></head>
 <body><main>
-  <h1>Crossy</h1>
+  <h1>Crossy {general}</h1>
+  {general_text}
   <p class="sub">{ready}</p>
-  {warnings}
   <form action="/sheet.pdf" method="get" onsubmit="return busy()">
     <input type="hidden" name="form" value="1">
     <div class="row">
       <button type="submit">Download PDF</button>
-      <button type="submit" class="ghost" name="view" value="1" formtarget="_blank">Open in browser</button>
+      <label class="opts"><input type="checkbox" name="answers" value="1"> Include answers</label>
     </div>
-    <div class="opts"><input type="checkbox" id="answers" name="answers" value="1">
-      <label for="answers">Add an answers page (when published)</label></div>
     <div id="status" role="status"></div>
     {sections}
   </form>
@@ -104,13 +114,18 @@ PAGE = """<!doctype html>
     setTimeout(() => {{ s.textContent = ''; }}, 6000);
     return true;
   }}
+  // a "!" opens its explanation underneath (in the row, the heading or the title)
+  document.querySelectorAll('details.warn').forEach(d => d.addEventListener('toggle', () => {{
+    const t = document.getElementById(d.dataset.for);
+    if (t) t.hidden = !d.open;
+  }}));
 </script>
 </body></html>
 """
 
 ERROR_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crossy: something went wrong</title>
-<body style="font:17px/1.5 Georgia,serif;max-width:34rem;margin:3rem auto;padding:0 1.25rem">
+<body style="font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1.25rem">
 <h1>Couldn't make the sheet</h1><p>{msg}</p><p><a href="/">Back</a></p></body>"""
 
 ID_RE = re.compile(r"^/api/puzzles/([a-z0-9-]+?-\d+)(\.pdf|/grid\.svg)?$")
@@ -120,27 +135,69 @@ def _esc(s):
     return html.escape(str(s or ""), quote=True)
 
 
+class _Warn:
+    """A "!" that expands to the message(s). The text sits in its own element so it can go
+    under a heading or a row rather than inside it."""
+    n = 0
+
+    def __init__(self, messages):
+        _Warn.n += 1
+        self.id = f"w{_Warn.n}"
+        self.messages = [m for m in messages if m]
+
+    def badge(self):
+        if not self.messages:
+            return ""
+        return (f'<details class="warn" data-for="{self.id}"><summary aria-label="Problem: show details">!</summary>'
+                f'</details>')
+
+    def text(self):
+        if not self.messages:
+            return ""
+        return f'<div class="warntext" id="{self.id}" hidden>' + "<br>".join(_esc(m) for m in self.messages) + "</div>"
+
+
 def _puzzle_row(s, checked):
-    bits = [s.get("date_label") or "", s.get("setter") or ""]
+    bits = [f'No {s["number"]:,}', s.get("setter") or ""]
     meta = " · ".join(b for b in bits if b)
     tags = ""
     if s.get("last_downloaded"):
-        tags += ' <span class="tag" title="Downloaded before">printed</span>'
+        tags += '<span class="tag" title="Downloaded before">printed</span>'
+    if s.get("solution_available"):
+        tags += '<span class="tag a" title="Answers available">A</span>'
     return (f'<li><label><input type="checkbox" name="p" value="{_esc(s["id"])}"{" checked" if checked else ""}>'
-            f'<span>{_esc(s["title"])}<br><span class="meta">{_esc(meta)}</span>{tags}</span></label></li>')
+            f'<span class="what">{_esc(s.get("date_label") or s["title"])}<span class="meta">{_esc(meta)}</span></span>'
+            f'{tags}</label></li>')
 
 
-def _warnings_html(warnings):
-    return "".join(f'<p class="warn">{_esc(w["message"])}</p>' for w in warnings)
+def _failed_row(number, message):
+    w = _Warn([message[:1].upper() + message[1:]])
+    return (f'<li><div class="failed"><span class="box"></span><span class="what">Couldn\'t fetch'
+            f'<span class="meta">No {int(number):,}</span></span>{w.badge()}</div>{w.text()}</li>')
+
+
+def _rows(items, failed, defaults):
+    """Saved puzzles and failed ones, newest (highest number) first."""
+    rows = [(s["number"], _puzzle_row(s, s["id"] in defaults)) for s in items]
+    rows += [(n, _failed_row(n, msg)) for n, msg in failed]
+    return "".join(r for _, r in sorted(rows, key=lambda r: -r[0]))
 
 
 def render_page(lib, source=None, page=None):
+    warnings = lib.warnings()
+    general = _Warn([w["message"] for w in warnings if not w["source"]])
+    failed_by_source = {}
+    for w in warnings:
+        if w["puzzle"]:
+            failed_by_source.setdefault(w["source"], []).append(
+                (int(w["puzzle"].rsplit("-", 1)[1]), w["message"].split(": ", 1)[-1]))
     if source and page:
         src = lib.source(source)
         items = lib.older(source, page)
-        defaults = set()
-        sections = (f"<h2>{_esc(src.name)}, further back</h2><ul>"
-                    + "".join(_puzzle_row(s, False) for s in items) + "</ul>"
+        nums = {s["number"] for s in items}
+        lo, hi = (min(nums), max(nums)) if nums else (0, 0)
+        failed = [(n, m) for n, m in failed_by_source.get(source, []) if lo <= n <= hi]
+        sections = (f"<h2>{_esc(src.name)}, further back</h2><ul>" + _rows(items, failed, set()) + "</ul>"
                     + f'<a class="more" href="/?source={_esc(source)}&amp;page={page + 1}">Older</a> · '
                     + '<a class="more" href="/">Back to this month</a>')
         ready = "Tick the puzzles you want on the sheet."
@@ -156,13 +213,17 @@ def render_page(lib, source=None, page=None):
         for key in lib.enabled:
             src = lib.source(key)
             rows = [s for s in recent if s["source"] == key]
-            sections += f"<h2>{_esc(src.name)}</h2>"
-            if rows:
-                sections += "<ul>" + "".join(_puzzle_row(s, s["id"] in defaults) for s in rows) + "</ul>"
+            oldest = min((s["number"] for s in rows), default=0)
+            failed = [(n, m) for n, m in failed_by_source.get(key, []) if n >= oldest]
+            series = _Warn([w["message"] for w in warnings if w["source"] == key and not w["puzzle"]])
+            sections += f"<h2>{_esc(src.name)} {series.badge()}</h2>{series.text()}"
+            if rows or failed:
+                sections += "<ul>" + _rows(rows, failed, defaults) + "</ul>"
             else:
                 sections += '<p class="meta">No puzzles saved yet.</p>'
-            sections += f'<a class="more" href="/?source={_esc(key)}&amp;page=2">Older {_esc(src.name)} puzzles</a>'
-    return PAGE.format(style=STYLE, ready=_esc(ready), warnings=_warnings_html(lib.warnings()), sections=sections)
+            sections += f'<a class="more" href="/?source={_esc(key)}&amp;page=2">Older puzzles</a>'
+    return PAGE.format(style=STYLE, ready=_esc(ready), general=general.badge(), general_text=general.text(),
+                       sections=sections)
 
 
 def _strip_answers(puz):

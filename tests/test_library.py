@@ -15,10 +15,10 @@ TODAY = dt.date(2026, 11, 27)
 
 def make_library(root, **kw):
     sources = {
-        "guardian-quick": daily_series("guardian-quick", "Quick crossword", 17648, TODAY, 45),
-        "guardian-quick-cryptic": daily_series("guardian-quick-cryptic", "Quick Cryptic", 138,
+        "guardian-quick": daily_series("guardian-quick", "Guardian Quick crossword", 17648, TODAY, 45),
+        "guardian-quick-cryptic": daily_series("guardian-quick-cryptic", "Guardian Quick Cryptic", 138,
                                                TODAY - dt.timedelta(days=6), 25, every=7, kind="cryptic"),
-        "guardian-quiptic": daily_series("guardian-quiptic", "Quiptic", 1409,
+        "guardian-quiptic": daily_series("guardian-quiptic", "Guardian Quiptic", 1409,
                                          TODAY - dt.timedelta(days=4), 25, every=7, kind="cryptic"),
     }
     lib = Library(Store(root), sources=sources, enabled=list(sources), today=TODAY, **kw)
@@ -110,9 +110,9 @@ class LibraryTests(unittest.TestCase):
         lib, src = make_library(self.root)
         src["guardian-quiptic"].puzzles[1410] = make_puzzle(
             "guardian-quiptic", 1410, date="2026-11-27", solutions=False, solution_date="2026-12-04",
-            title="Quiptic No 1,410")
+            title="Guardian Quiptic No 1,410")
         _, name, notes = lib.sheet(["guardian-quick-17648", "guardian-quiptic-1410"], answers=True)
-        self.assertEqual(notes, ["Answers aren't published yet for Quiptic No 1,410."])
+        self.assertEqual(notes, ["Answers aren't published yet for Guardian Quiptic No 1,410."])
         self.assertTrue(name.endswith("_answers.pdf"))
 
     def test_answers_are_fetched_again_once_due(self):
@@ -144,7 +144,7 @@ class LibraryTests(unittest.TestCase):
         src["guardian-quick"].listing_error = "couldn't reach www.theguardian.com (timed out)"
         lib.refresh(force=True)
         msgs = [w["message"] for w in lib.warnings()]
-        self.assertIn("Couldn't check for new Quick crossword puzzles: couldn't reach www.theguardian.com "
+        self.assertIn("Couldn't check for new Guardian Quick crossword puzzles: couldn't reach www.theguardian.com "
                       "(timed out)", msgs)
         self.assertEqual(len(lib.recent()), before)
         self.assertEqual(default_selection(lib), ["guardian-quick-17648", "guardian-quick-cryptic-138"])

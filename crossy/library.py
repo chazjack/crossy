@@ -140,11 +140,13 @@ class Library:
                 if not force and self._is_fresh(idx):
                     continue
                 cutoff = self.today() - dt.timedelta(days=self.history_days)
+                seen = set()
                 try:
                     for page in range(1, MAX_PAGES + 1):
                         nums = src.list_page(page)
                         if not nums:
                             break
+                        seen.update(nums)
                         self._ensure(src, nums, stop_before=cutoff)
                         dates = [idx["puzzles"][str(n)]["date"] for n in nums
                                  if str(n) in idx["puzzles"] and idx["puzzles"][str(n)].get("date")]
@@ -152,6 +154,10 @@ class Library:
                             break
                         if not dates:             # nothing on this page could be fetched
                             break
+                    if seen:                      # forget failures the listing no longer shows
+                        for n in list(idx["failed"]):
+                            if int(n) not in seen and int(n) >= min(seen):
+                                idx["failed"].pop(n)
                     idx["error"] = None
                     idx["refreshed_at"] = now_iso()
                 except FetchError as e:

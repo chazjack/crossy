@@ -51,11 +51,29 @@ class ServerTests(unittest.TestCase):
         code, _, body = self.get("/")
         page = body.decode()
         self.assertEqual(code, 200)
-        self.assertIn("Ready to download: Quick crossword (Fri 27 Nov) and Quick Cryptic (Sat 21 Nov).", page)
+        self.assertIn("Ready to download: Guardian Quick crossword (Fri 27 Nov) and Guardian Quick Cryptic "
+                      "(Sat 21 Nov).", page)
         self.assertIn('value="guardian-quick-17648" checked', page)
         self.assertIn('value="guardian-quick-cryptic-138" checked', page)
         self.assertIn('value="guardian-quiptic-1409">', page)
         self.assertNotIn('name="quick"', page)              # the old number boxes are gone
+        self.assertIn("Include answers", page)
+        self.assertIn('title="Answers available">A<', page)
+        self.assertNotIn("Open in browser", page)
+
+    def test_failed_puzzle_shows_a_badge_in_its_list(self):
+        from crossy.sources import FetchError
+        self.src["guardian-quiptic"].puzzles[1410] = FetchError("no puzzle data on the page")
+        self.lib.refresh(["guardian-quiptic"], force=True)
+        try:
+            page = self.get("/")[2].decode()
+            self.assertIn("Couldn't fetch<span class=\"meta\">No 1,410</span>", page)
+            self.assertIn('class="warntext"', page)
+            self.assertIn("No puzzle data on the page", page)
+        finally:
+            del self.src["guardian-quiptic"].puzzles[1410]
+            self.lib.refresh(["guardian-quiptic"], force=True)
+        self.assertFalse(any(w["puzzle"] for w in self.lib.warnings()))   # gone from the listing, so no warning
 
     def test_older_page(self):
         code, _, body = self.get("/?source=guardian-quick&page=2")
