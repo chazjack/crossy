@@ -154,7 +154,7 @@ def run(a):
 
     if a.email:
         to = _addresses(os.environ.get("EMAIL_TO"))
-        subject = "Crosswords: " + " & ".join(p["title"].replace(" No ", " ") for p in puzzles)
+        subject = " & ".join(p["title"].replace(" No ", " ") for p in puzzles)
         res = send_email(to, subject, "This week's crosswords are attached. Happy solving!", path)
         print(f"Emailed to {', '.join(to)} (id {res.get('id', '?')}).")
 
