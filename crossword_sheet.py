@@ -151,7 +151,7 @@ def run(a):
         ids = a.puzzle or default_selection(lib, refresh=False)
         if not ids:
             sys.exit("Couldn't find any puzzles: " + "; ".join(w["message"] for w in lib.warnings()))
-        puzzles = [lib.get(pid) for pid in ids]
+        puzzles = [lib.get(pid, explain=a.answers) for pid in ids]
 
     for puz in puzzles:
         print_summary(puz)

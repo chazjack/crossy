@@ -25,7 +25,8 @@ Weekly email (called by the Railway cron job, never by a browser)
   POST /api/email/run           sends the weekly email if it's due; needs header X-Crossy-Token: CRON_TOKEN
 
 Puzzle summaries carry: id, source, source_name, number, title, setter, date, date_label,
-cols, rows, clues, has_tricks, solution_available, solution_date, answers_due, url, last_downloaded.
+cols, rows, clues, has_tricks, solution_available, solution_date, answers_due, url, last_downloaded,
+explained (a Fifteensquared write-up is saved) and blog_url.
 
 Environment:
   PORT             set by Railway
@@ -428,7 +429,9 @@ def _puzzle_row(s, checked):
     tags = ""
     if s.get("last_downloaded"):
         tags += '<span class="tag" title="Downloaded before">printed</span>'
-    if s.get("solution_available"):
+    if s.get("explained"):
+        tags += '<span class="tag a" title="Answers and explanations from Fifteensquared">A</span>'
+    elif s.get("solution_available"):
         tags += '<span class="tag a" title="Answers available">A</span>'
     return (f'<li data-source="{_esc(s["source"])}"><label>'
             f'<input type="checkbox" name="p" value="{_esc(s["id"])}" data-title="{_esc(s["title"])}" '
@@ -552,7 +555,10 @@ def render_settings(lib, notice="", bad=False):
 
 def _strip_answers(puz):
     out = dict(puz)
-    out["entries"] = [{k: v for k, v in e.items() if k != "solution"} for e in puz["entries"]]
+    out["entries"] = [{k: v for k, v in e.items() if k not in ("solution", "guardian_solution")}
+                      for e in puz["entries"]]
+    if out.get("blog"):                      # the write-up gives the answers away too
+        out["blog"] = {k: v for k, v in out["blog"].items() if k != "clues"}
     return out
 
 
@@ -726,7 +732,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = lib.puzzle_pdf(pid)
                 return self._send(200, data, "application/pdf",
                                   {"Content-Disposition": f'inline; filename="{pid}.pdf"'})
-            puz = lib.get(pid)
+            puz = lib.get(pid, explain=bool(answers) and not suffix)
         except (KeyError, NotFound) as e:
             return self._json({"error": f"no such puzzle: {pid} ({e})"}, 404)
         except FetchError as e:

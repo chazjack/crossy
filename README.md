@@ -21,6 +21,7 @@ screenshotted.
 | `crossy/library.py` | Fetch-once history: refresh, list the last month, look up, warnings |
 | `crossy/store.py` | Saves puzzle data and PDFs on disk |
 | `crossy/pdf.py` | The A4 layout, plus the answers pages |
+| `crossy/blog.py` | Finds and reads each cryptic's Fifteensquared write-up (answers and explanations) |
 | `crossy/selection.py` | The default pair, used by both the website and the weekly email |
 | `crossy/preview.py` | Small SVG grid previews |
 | `server.py` | The download page and JSON API |
@@ -34,6 +35,24 @@ fetched by id, and listing them is one line (add the key to `DEFAULT_ENABLED` in
 **Adding another publication:** write a `Source` subclass (see `crossy/sources/base.py`) with
 `list_page(page)` and `fetch(number)` returning the normalised puzzle shape described there,
 then add it to `ALL` in `crossy/sources/__init__.py`. The library, PDFs and website need no changes.
+
+## Answers and explanations (Fifteensquared)
+
+[Fifteensquared](https://fifteensquared.net) blogs every Guardian cryptic (Quiptic, Quick Cryptic,
+Cryptic, Prize), usually within a day or so: the solved grid and how each clue works. When you
+ask for answers, Crossy looks for the puzzle's post and, if there is one:
+
+- uses its answers (in preference to the Guardian's), so answers can arrive before the Guardian
+  publishes them;
+- prints a full answers page for that puzzle: the filled grid, then every clue with its answer,
+  the clue with its definition underlined, and the blogger's explanation (running onto a second
+  page if the write-up is long), credited to the blogger with the post's address.
+
+If there's no post yet, the Guardian's answers are used as before, on the half-page layout, and
+the sheet's notes say so. The blog is checked again after three hours, and given up on two months
+after the puzzle came out. A post is found through the blog's search (by series and number) and
+read from its text, so it works with the different ways bloggers lay posts out. If a post can't be
+read well enough (fewer than 60% of clues), it's ignored. The Quick crossword isn't blogged.
 
 Puzzle ids look like `guardian-quick-17648` (series key, then the puzzle number).
 
@@ -63,8 +82,12 @@ and the API returns it under `warnings`. Failed puzzles are retried on the next 
 
 Each puzzle summary has `id`, `source`, `source_name`, `number`, `title`, `setter` (none for the
 Quick crossword), `date`, `date_label` (e.g. "Thu 26 Nov"), `cols`, `rows`, `clues`,
-`has_tricks`, `solution_available`, `solution_date`, `answers_due`, `url` and `last_downloaded`
-(when it last went into a downloaded PDF, for "already printed" markers).
+`has_tricks`, `solution_available`, `solution_date`, `answers_due`, `url`, `last_downloaded`
+(when it last went into a downloaded PDF, for "already printed" markers), `explained` (a
+Fifteensquared write-up is saved) and `blog_url`.
+
+`GET /api/puzzles/<id>?answers=1` also looks for the Fifteensquared post and includes it under
+`blog` (`url`, `blogger`, and `clues`: per entry id, `answer`, `clue`, `definitions`, `explanation`).
 
 ## Railway setup (one time)
 
