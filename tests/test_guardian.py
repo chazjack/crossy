@@ -51,7 +51,9 @@ class GuardianTests(unittest.TestCase):
         for key in ("guardian-quick-cryptic", "guardian-quiptic", "guardian-cryptic", "guardian-prize",
                     "guardian-everyman", "guardian-speedy"):
             self.assertIn(key, sources.ALL)
-        self.assertEqual(sources.enabled_keys(), ["guardian-quick", "guardian-quick-cryptic", "guardian-quiptic"])
+        self.assertEqual(sources.enabled_keys(), ["guardian-quick", "guardian-quick-cryptic", "guardian-quiptic",
+                                                  "guardian-cryptic", "guardian-prize", "guardian-everyman",
+                                                  "guardian-speedy"])
         src, n = sources.split_id("guardian-quick-cryptic-138")
         self.assertEqual((src.key, n), ("guardian-quick-cryptic", 138))
 

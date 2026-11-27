@@ -51,11 +51,17 @@ class ServerTests(unittest.TestCase):
         code, _, body = self.get("/")
         page = body.decode()
         self.assertEqual(code, 200)
-        self.assertIn("Ready to download: Guardian Quick crossword (Fri 27 Nov) and Guardian Quick Cryptic "
-                      "(Sat 21 Nov).", page)
-        self.assertIn('value="guardian-quick-17648" checked', page)
-        self.assertIn('value="guardian-quick-cryptic-138" checked', page)
-        self.assertIn('value="guardian-quiptic-1409">', page)
+        self.assertIn('<ul id="ready"><li>Guardian Quick crossword No 17,648<span class="meta">Fri 27 Nov</span></li>'
+                      '<li>Guardian Quick Cryptic No 138<span class="meta">Sat 21 Nov</span></li></ul>', page)
+        self.assertRegex(page, r'value="guardian-quick-17648" [^>]*checked')
+        self.assertRegex(page, r'value="guardian-quick-cryptic-138" [^>]*checked')
+        self.assertNotRegex(page, r'value="guardian-quiptic-1409" [^>]*checked')
+        # one list, newest first, with a dropdown to pick the type
+        self.assertIn('<option value="all">All crosswords</option>', page)
+        self.assertIn('<option value="guardian-quiptic">Guardian Quiptic (', page)
+        order = [page.index(f'value="{i}"') for i in
+                 ("guardian-quick-17648", "guardian-quick-17647", "guardian-quiptic-1409", "guardian-quick-cryptic-138")]
+        self.assertEqual(order, sorted(order))
         self.assertNotIn('name="quick"', page)              # the old number boxes are gone
         self.assertIn("Include answers", page)
         self.assertIn('title="Answers available">A<', page)
@@ -67,7 +73,7 @@ class ServerTests(unittest.TestCase):
         self.lib.refresh(["guardian-quiptic"], force=True)
         try:
             page = self.get("/")[2].decode()
-            self.assertIn("Couldn't fetch<span class=\"meta\">No 1,410</span>", page)
+            self.assertIn("Guardian Quiptic No 1,410<span class=\"meta\">Couldn't fetch</span>", page)
             self.assertIn('class="warntext"', page)
             self.assertIn("No puzzle data on the page", page)
         finally:

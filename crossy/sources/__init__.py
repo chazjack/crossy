@@ -1,8 +1,7 @@
 """The registry of puzzle series.
 
-ENABLED is what the website lists and refreshes. Everything in ALL can still be fetched by id
-(and enabled later by adding its key to ENABLED, or with the CROSSY_SOURCES variable,
-a comma-separated list of keys).
+DEFAULT_ENABLED is what the website lists and refreshes (every Guardian series, for now).
+CROSSY_SOURCES, a comma-separated list of keys, overrides it. Anything in ALL can be fetched by id.
 """
 from __future__ import annotations
 
@@ -26,7 +25,8 @@ def _guardian():
 
 ALL = {s.key: s for s in _guardian()}
 
-DEFAULT_ENABLED = ["guardian-quick", "guardian-quick-cryptic", "guardian-quiptic"]
+DEFAULT_ENABLED = ["guardian-quick", "guardian-quick-cryptic", "guardian-quiptic", "guardian-cryptic",
+                   "guardian-prize", "guardian-everyman", "guardian-speedy"]
 
 
 def enabled_keys():
