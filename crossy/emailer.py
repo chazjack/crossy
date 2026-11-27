@@ -3,14 +3,14 @@
 Settings live in the data folder as email.json, edited on the website's /settings page:
   enabled     on or off
   day         0 = Monday ... 6 = Sunday
-  time        "HH:MM", UK time, on the half hour (TIMES)
+  time        "HH:MM", UK time, on the half hour from 06:00 to 21:30 (TIMES)
   sources     which series to send (the latest puzzle of each), in sheet order
   recipients  addresses to send to (yourself, a printer's Email Print address, ...)
   answers     add an answers page for puzzles whose answers are already published
   last_sent   {"at", "date", "ids", "to"} for the most recent send
 
-The Railway cron job (crossword_sheet.py --scheduled) asks the website every half hour on
-weekday mornings whether the email is due; the website sends it at most once a day.
+The Railway cron job (crossword_sheet.py --scheduled) asks the website every half hour
+whether the email is due; the website sends it at most once a day.
 
 Sending needs RESEND_API_KEY and EMAIL_FROM. NOTIFY_TO (optional) gets a note when a run fails.
 """
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import html
 import json
 import os
 import re
@@ -33,7 +34,7 @@ except Exception:                         # no tz database: fall back to UTC (an
 from crossy.selection import DEFAULT_SOURCES
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-TIMES = [f"{h:02d}:{m:02d}" for h in range(6, 10) for m in (0, 30)]   # 06:00 ... 09:30
+TIMES = [f"{h:02d}:{m:02d}" for h in range(6, 22) for m in (0, 30)]   # 06:00 ... 21:30
 WINDOW = dt.timedelta(minutes=90)         # a late cron run still sends, a much later one doesn't
 EMAIL_RE = re.compile(r"^[^@\s,;<>\"]+@[^@\s,;<>\"]+\.[^@\s,;<>\"]+$")
 MAX_RECIPIENTS = 10
@@ -175,16 +176,51 @@ def subject(puzzles):
 
 
 # ---------------------------------------------------------------- sending (Resend)
-def send(to, subject, text, attachment=None):
-    """attachment: (filename, bytes). Returns Resend's reply. Raises RuntimeError with the reason."""
+LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "email-logo.png")
+
+
+def html_body(paragraphs, logo=True):
+    """The email as HTML: the Crossy logo and name, then the paragraphs. The logo is sent inline (cid:crossy-logo)."""
+    img = ('<img src="cid:crossy-logo" width="48" height="48" alt="" '
+           'style="display:block;border:0;margin-right:12px">') if logo else ""
+    body = "".join(f'<p style="margin:0 0 12px">{html.escape(p)}</p>' for p in paragraphs)
+    return ('<div style="font:16px/1.5 -apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b">'
+            '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr>'
+            f'<td style="vertical-align:middle">{img}</td>'
+            '<td style="vertical-align:middle;font-size:28px;font-weight:750;letter-spacing:-.02em">Crossy</td>'
+            f'</tr></table>{body}</div>')
+
+
+def logo_attachment():
+    """The logo as an inline attachment, or None if the file is missing (the email then goes without it)."""
+    try:
+        with open(LOGO_PATH, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    return {"filename": "crossy-logo.png", "content": base64.b64encode(data).decode("ascii"),
+            "content_id": "crossy-logo", "content_type": "image/png"}
+
+
+def send(to, subject, text, attachment=None, html_text=None):
+    """attachment: (filename, bytes). html_text: optional HTML version. Returns Resend's reply.
+    Raises RuntimeError with the reason."""
     key, sender = os.environ.get("RESEND_API_KEY"), os.environ.get("EMAIL_FROM")
     if not (key and sender and to):
         missing = [n for n, v in (("RESEND_API_KEY", key), ("EMAIL_FROM", sender), ("a recipient", to)) if not v]
         raise RuntimeError("Can't send email: missing " + ", ".join(missing) + ".")
     body = {"from": sender, "to": to, "subject": subject, "text": text}
+    attachments = []
+    if html_text:
+        body["html"] = html_text
+        logo = logo_attachment()
+        if logo and "cid:crossy-logo" in html_text:
+            attachments.append(logo)
     if attachment:
         name, data = attachment
-        body["attachments"] = [{"filename": name, "content": base64.b64encode(data).decode("ascii")}]
+        attachments.append({"filename": name, "content": base64.b64encode(data).decode("ascii")})
+    if attachments:
+        body["attachments"] = attachments
     req = urllib.request.Request(
         "https://api.resend.com/emails", data=json.dumps(body).encode("utf-8"), method="POST",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
@@ -207,10 +243,10 @@ def send_sheet(lib, settings, scheduled=True, now=None):
     pdf, name, notes = lib.sheet(ids, answers=settings["answers"])
     puzzles = [lib.get(i) for i in ids]
     to = settings["recipients"]
-    text = "This week's crosswords are attached. Happy solving!"
+    paragraphs = ["This week's crosswords are attached. Happy solving!"]
     if notes:
-        text += "\n\n" + " ".join(notes)
-    res = send(to, subject(puzzles), text, (name, pdf))
+        paragraphs.append(" ".join(notes))
+    res = send(to, subject(puzzles), "\n\n".join(paragraphs), (name, pdf), html_body(paragraphs))
     now = now or now_uk()
     if not scheduled:
         return ids, to, notes
