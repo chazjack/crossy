@@ -90,6 +90,37 @@ POST_TABLE = """
 """
 
 
+# The Quick Cryptic posts: definition bold and underlined, answer and parsing behind reveals
+# labelled "Answer" and "Parsing".
+POST_QC = """
+<p>We hide the answers and the parsing too. To find the solution click on 'Answer'.</p>
+<p><button>Expand All</button></p>
+<p><strong>ACROSS</strong></p>
+<p>1</p>
+<p><strong><u>Raises</u></strong> made-up words, more words (5,2)</p>
+<details><summary><strong>Answer</strong></summary><p>BUMPS UP</p></details>
+<details><summary><strong>Parsing</strong></summary><p><em>charade</em> BUMP + PUS reversed</p></details>
+<p>5</p>
+<p>Invented words with <strong><u>people</u></strong> (7)</p>
+<details><summary><strong>Answer</strong></summary><p>MORTALS</p></details>
+<details><summary><strong>Parsing</strong></summary><p>MOR[E] + TAL[E]S</p></details>
+<p>9</p>
+<p><strong><u>Bottom</u></strong> of drain broken (5)</p>
+<details><summary><strong>Answer</strong></summary><p>NADIR</p></details>
+<details><summary><strong>Parsing</strong></summary><p><em>anagram</em> of DRAIN</p></details>
+<p><strong>DOWN</strong></p>
+<p>1</p>
+<p>Start of made-up <strong><u>old car</u></strong> (6)</p>
+<details><summary><strong>Answer</strong></summary><p>BANGER</p></details>
+<details><summary><strong>Parsing</strong></summary><p>B + ANGER</p></details>
+<p>2</p>
+<p>Amused swimming <strong><u>jellyfish</u></strong> (6)</p>
+<div class="reveal"><span>Answer:</span> MEDUSA</div>
+<div class="reveal"><span>Parsing:</span> (AMUSED)*</div>
+<p><img src="https://example.test/QuickCryptic138.webp" /></p>
+"""
+
+
 class ParseTests(unittest.TestCase):
     def check(self, html):
         got = blog.parse(html, tiny_puzzle())
@@ -119,6 +150,14 @@ class ParseTests(unittest.TestCase):
     def test_table_layout(self):
         got = self.check(POST_TABLE)
         self.assertEqual(got["9-across"]["explanation"], "(DRAIN)*")
+
+    def test_quick_cryptic_layout(self):
+        got = self.check(POST_QC)
+        self.assertEqual(got["1-across"]["clue"], "Raises made-up words, more words (5,2)")
+        self.assertEqual(got["1-across"]["definitions"], ["Raises"])
+        self.assertEqual(got["1-across"]["explanation"], "charade BUMP + PUS reversed")
+        self.assertEqual(got["2-down"]["explanation"], "(AMUSED)*")
+        self.assertEqual(got["2-down"]["definitions"], ["jellyfish"])
 
     def test_intro_numbers_are_not_clues(self):
         got = blog.parse(POST_2026, tiny_puzzle())
@@ -181,6 +220,33 @@ class FindTests(unittest.TestCase):
         self.assertEqual(post["blogger"], "Blogger")
         self.assertEqual(post["title"], "Guardian Quiptic 1,409/Harpo")
         self.assertIn("search=Quiptic+1%2C409", seen[0])
+
+    def test_falls_back_to_the_search_page(self):
+        """The API answers with a bot check; the search page and post page still work."""
+        pages = {
+            "search": '<html>fifteensquared <h2 class="entry-title"><a href="https://fifteensquared.net/2026/11/21/'
+                      'guardian-quick-cryptic-137-by-glyph/">Guardian Quick Cryptic 137 by Glyph</a></h2>'
+                      '<h2 class="entry-title"><a href="https://fifteensquared.net/2026/11/21/guardian-quick-cryptic-138'
+                      '-by-chandler/" rel="bookmark">Guardian Quick Cryptic 138 by Chandler</a></h2>' + "x" * 3000,
+            "post": '<html><h1>Guardian Quick Cryptic 138 by Chandler</h1><span class="author-name" itemprop="name">'
+                    'Shanne</span><div class="entry-content" itemprop="text">' + POST_QC +
+                    '</div><div id="comments"><p>1 Great puzzle</p></div>' + "x" * 3000,
+        }
+
+        def http(url):
+            if "wp-json" in url:
+                return "<html>One moment, please...</html>"
+            return pages["search"] if "?s=" in url else pages["post"]
+        puz = tiny_puzzle()
+        puz.update(source="guardian-quick-cryptic", number=138, date="2026-11-21")
+        post = blog.Fifteensquared(http).find(puz)
+        self.assertEqual(post["url"], "https://fifteensquared.net/2026/11/21/guardian-quick-cryptic-138-by-chandler/")
+        self.assertEqual(post["blogger"], "Shanne")
+        self.assertEqual(post["date"], "2026-11-21")
+        self.assertNotIn("Great puzzle", post["html"])
+        got = blog.parse(post["html"], puz)
+        self.assertEqual(got["9-across"]["answer"], "NADIR")
+        self.assertNotIn("Great", got["2-down"]["explanation"])
 
     def test_not_blogged_yet(self):
         b = blog.Fifteensquared(lambda url: "[]")
@@ -295,7 +361,9 @@ class PdfTests(unittest.TestCase):
             self.assertLessEqual(x1, pdf.PAGE_W - pdf.MARGIN + 1, what)
             self.assertGreaterEqual(y0, pdf.MARGIN - 2, what)
         texts = [w for *_, w in pages[1]]
-        self.assertTrue(any("Fifteensquared" in t for t in texts))
+        self.assertIn("Fifteensquared", texts)                    # on the right of the header
+        self.assertFalse(any("fifteensquared.net" in t or "Blogger" in t or "Setter" in t or "2026" in t
+                             for t in texts))
         self.assertTrue(any(t.startswith("explained") for t in texts))
 
     def test_long_write_up_runs_onto_another_page(self):
@@ -305,6 +373,23 @@ class PdfTests(unittest.TestCase):
         for page in pages[1:]:
             for x0, y0, x1, y1, what in page:
                 self.assertGreaterEqual(y0, pdf.MARGIN - 2, what)
+
+    def test_answers_follow_the_crosswords_order(self):
+        a = make_puzzle("guardian-quick", 1, 13, 13, clue_words=3)
+        b = self.explained_puzzle()
+        c = make_puzzle("guardian-quick", 3, 13, 13, clue_words=3)
+        d = make_puzzle("guardian-quick", 4, 13, 13, clue_words=3, solutions=False)
+        e = make_puzzle("guardian-quick", 5, 13, 13, clue_words=3)
+        layout = pdf.answer_pages([a, b, c, d, e])
+        # a's half page is shared with c (saving paper), b keeps its own page, d has no answers
+        self.assertEqual([(k, [p["number"] for p in (w if k == "halves" else [w])]) for k, w in layout],
+                         [("halves", [1, 3]), ("full", [1409]), ("halves", [5])])
+
+    def test_half_page_answers_have_nothing_on_the_right(self):
+        plain = make_puzzle("guardian-quiptic", 7, 13, 13, setter="Setter", clue_words=3)
+        _, pages = record([plain], answers=True)
+        texts = [w for *_, w in pages[1]]
+        self.assertFalse(any("Setter" in t or "2026" in t for t in texts))
 
     def test_mixed_sheet(self):
         plain = make_puzzle("guardian-quick", 17648, 13, 13, clue_words=3)
