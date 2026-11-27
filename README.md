@@ -46,12 +46,15 @@ ask for answers, Crossy looks for the puzzle's post and, if there is one:
   publishes them;
 - prints a full answers page for that puzzle: the filled grid, then every clue with its answer,
   the clue with its definition underlined, and the blogger's explanation (running onto a second
-  page if the write-up is long), credited to the blogger with the post's address.
+  page if the write-up is long). The header says "Fifteensquared" on the right.
+
+Answers come after the puzzles, in the same order. Half-page answers (the Guardian's) pair up
+two to a page, and skip over a full Fifteensquared page to share a sheet, to save paper.
 
 If there's no post yet, the Guardian's answers are used as before, on the half-page layout, and
 the sheet's notes say so. The blog is checked again after three hours, and given up on two months
-after the puzzle came out. A post is found through the blog's search (by series and number) and
-read from its text, so it works with the different ways bloggers lay posts out. If a post can't be
+after the puzzle came out. A post is found through the blog's search API (by series and number), or its search page and
+the post itself when the API answers with a bot check, and read from its text, so it works with the different ways bloggers lay posts out. If a post can't be
 read well enough (fewer than 60% of clues), it's ignored. The Quick crossword isn't blogged.
 
 Puzzle ids look like `guardian-quick-17648` (series key, then the puzzle number).

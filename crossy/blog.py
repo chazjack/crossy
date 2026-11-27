@@ -21,7 +21,8 @@ from html.parser import HTMLParser
 from .sources.base import FetchError, http_get, now_iso
 
 NAME = "Fifteensquared"
-API = "https://fifteensquared.net/wp-json/wp/v2/posts"
+SITE = "https://fifteensquared.net"
+API = SITE + "/wp-json/wp/v2/posts"
 MIN_PARSED = 0.6              # share of clues a post must explain before we use it
 
 # What a post title must (and mustn't) say for each series. The blog covers the cryptics only.
@@ -75,12 +76,23 @@ class Fifteensquared:
         return data
 
     def find(self, puz):
-        """The post for this puzzle, or None if it hasn't been blogged (yet)."""
+        """The post for this puzzle, or None if it hasn't been blogged (yet).
+        Tries the blog's search API first; if that's refused (the site sometimes answers
+        automated requests with a bot check), falls back to its search page and the post page."""
         if not supports(puz):
             return None
         n = int(puz["number"])
         word = _SEARCH_WORDS[puz["source"]]
         queries = [f"{word} {n:,}"] + ([f"{word} {n}"] if n >= 1000 else [])
+        try:
+            return self._find_api(puz, queries)
+        except FetchError as api_error:
+            try:
+                return self._find_html(puz, queries)
+            except FetchError:
+                raise api_error
+
+    def _find_api(self, puz, queries):
         for q in queries:
             for post in self._search(q):
                 title = (post.get("title") or {}).get("rendered", "")
@@ -98,10 +110,62 @@ class Fifteensquared:
                 }
         return None
 
+    def _find_html(self, puz, queries):
+        for q in queries:
+            page = self.http_get(SITE + "/?" + urllib.parse.urlencode({"s": q}))
+            if _is_bot_check(page):
+                raise FetchError("Fifteensquared asked us to wait (bot check); will try again later")
+            for link, title in _post_links(page):
+                date = "-".join(re.search(r"/(\d{4})/(\d\d)/(\d\d)/", link).groups())
+                if not title_matches(title, puz) or (puz.get("date") and date < puz["date"]):
+                    continue
+                body = self.http_get(link)
+                if _is_bot_check(body):
+                    raise FetchError("Fifteensquared asked us to wait (bot check); will try again later")
+                content = post_content(body)
+                if content is None:
+                    raise FetchError(f"couldn't find the write-up on {link}")
+                m = re.search(r'class="author-name"[^>]*>([^<]+)<', body)
+                return {"url": link, "title": html.unescape(re.sub(r"<[^>]+>", "", title)).strip(),
+                        "date": date, "blogger": html.unescape(m.group(1)).strip() if m else None,
+                        "html": content}
+        return None
+
+
+def _is_bot_check(page):
+    """The short "One moment, please..." page the site shows while it checks a visitor."""
+    text = page or ""
+    return len(text) < 3000 and ("one moment" in text.lower() or "being verified" in text.lower()
+                                 or "fifteensquared" not in text.lower())
+
+
+def _post_links(page):
+    """(link, title) for each post linked from a search results page, in order."""
+    seen, out = set(), []
+    for m in re.finditer(r'<a[^>]+href="(https://fifteensquared\.net/\d{4}/\d\d/\d\d/[^"#?]+)"[^>]*>(.*?)</a>',
+                         page or "", re.S):
+        link, title = m.group(1), re.sub(r"<[^>]+>", "", m.group(2)).strip()
+        if title and link not in seen:
+            seen.add(link)
+            out.append((link, title))
+    return out
+
+
+def post_content(page):
+    """The body of a post page: the entry-content block, stopping before the comments."""
+    m = re.search(r'<div[^>]+class="[^"]*\bentry-content\b[^"]*"[^>]*>', page or "")
+    if not m:
+        return None
+    body = page[m.end():]
+    ends = [i for i in (body.find(marker) for marker in
+                        ('id="comments"', 'class="comments-area', '<footer', 'class="sharedaddy',
+                         'class="entry-meta', '<nav')) if i >= 0]
+    return body[:min(ends)] if ends else body
+
 
 # ---------------------------------------------------------------- parsing
 _BLOCK = {"p", "br", "div", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table", "tbody",
-          "thead", "ul", "ol", "blockquote", "hr"}
+          "thead", "ul", "ol", "blockquote", "hr", "details", "summary", "section", "figure"}
 _BOLD = {"strong", "b"}
 _SKIP = {"script", "style", "noscript"}
 
@@ -222,8 +286,52 @@ def _clean_expl(s):
     return re.sub(r"^[\s:=\-–—]+", "", s).strip()
 
 
+_ANSWER_LABEL = re.compile(r"^(answer|solution)\s*[:\-–]?\s*(.*)$", re.I)
+_EXPL_LABEL = re.compile(r"^(parsing|explanation|wordplay|parse)\s*[:\-–]?\s*", re.I)
+
+
+def _defs(runs):
+    defs, cur = [], ""
+    for t, _, u in runs:
+        if u:
+            cur += t
+        elif cur:
+            defs.append(re.sub(r"\s+", " ", cur).strip()); cur = ""
+    if cur:
+        defs.append(re.sub(r"\s+", " ", cur).strip())
+    return [d for d in defs if d]
+
+
+def _parse_labelled(lines):
+    """The layout with "Answer" and "Parsing" labels (e.g. the Quick Cryptic posts, where
+    the answer is hidden behind a reveal): clue, Answer, the answer, Parsing, the explanation."""
+    texts = [_text(ln) for ln in lines]
+    at = next((i for i, t in enumerate(texts) if _ANSWER_LABEL.match(t)
+               and (len(t) < 40 or t.lower().startswith(("answer:", "solution:")))), None)
+    if at is None:
+        return None
+    rest = _ANSWER_LABEL.match(texts[at]).group(2).strip()
+    k = at + 1
+    if not rest:
+        while k < len(texts) and not texts[k]:
+            k += 1
+        if k >= len(texts) or _EXPL_LABEL.match(texts[k]):
+            return None
+        rest, k = texts[k], k + 1
+    answer = re.sub(r"\s+", " ", rest).strip(" ,/.")
+    if not _letters(answer):
+        return None
+    expl = " ".join(_EXPL_LABEL.sub("", t) for t in texts[k:] if t and not _EXPL_LABEL.fullmatch(t))
+    clue_runs = [r for ln in lines[:at] for r in ln + [(" ", False, False)]]
+    return {"answer": answer.upper() if answer.islower() else answer, "clue": _text(clue_runs),
+            "definitions": _defs(clue_runs), "explanation": _clean_expl(expl)}
+
+
 def _parse_clue(lines, entry, puz):
     """lines: the clue's lines with the number already removed."""
+    labelled = _parse_labelled(lines)
+    if labelled:
+        return labelled
     runs = [(t, b, u) for i, ln in enumerate(lines) for t, b, u in (ln + ([("\n", False, False)] if i < len(lines) - 1 else []))]
     want = _total_length(entry, puz)
     answer_at = None

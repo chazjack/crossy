@@ -6,6 +6,8 @@ With answers=True, answer pages follow the puzzles (same half-page layout, grids
 for the puzzles whose answers are published. Puzzles without answers are left off those pages.
 A puzzle with a Fifteensquared write-up (puz["blog"], see crossy/blog.py) gets a full page
 instead: the filled grid and every clue with its answer and the blogger's explanation.
+Answers always start on a new page after the puzzles and follow the puzzles' order, except
+that two half-page answer sets share a page across a full page, to save paper.
 """
 from __future__ import annotations
 
@@ -262,7 +264,7 @@ def draw_puzzle(c, puz, x0, y_top, w, h, answers=False):
     plan = plan_puzzle(puz, w, h, answers)
     title = f"Answers: {puz['title']}" if answers else puz["title"]
     when = date_label(puz)
-    byline = f"{puz['setter']}  ·  {when}" if puz.get("setter") else when
+    byline = "" if answers else (f"{puz['setter']}  ·  {when}" if puz.get("setter") else when)
     c.setFillGray(0)
     c.setFont("Helvetica-Bold", 13)
     c.drawString(x0, y_top - 13, title)
@@ -291,7 +293,6 @@ def _fold_line(c):
 EXPL_SIZES = [9, 8.5, 8, 7.5, 7, 6.5]
 EXPL_MIN_ONE_PAGE = 6.5       # smallest font tried before running onto a second page
 EXPL_GRID_W = 72 * mm
-EXPL_SUB_H = 12               # the "Explanations from ..." line under the title
 
 
 def _marked_words(text, marks):
@@ -369,7 +370,7 @@ def _flow(items, first_h, full_h):
 def plan_explained(puz, w, h):
     """(size, grid cell, pages) for the explained answers of one puzzle."""
     colw = (w - COL_GAP * 2) / 2
-    full_h = h - HEADER_H - EXPL_SUB_H
+    full_h = h - HEADER_H
     cell = min(EXPL_GRID_W, colw) / puz["cols"]
     first_h = full_h - cell * puz["rows"] - 5 * mm
     best = None
@@ -427,9 +428,7 @@ def draw_explained(c, puz):
     x0, y_top, w, h = MARGIN, PAGE_H - MARGIN, PAGE_W - 2 * MARGIN, PAGE_H - 2 * MARGIN
     size, cell, pages, colw = plan_explained(puz, w, h)
     lead = size * 1.2
-    blog = puz.get("blog") or {}
-    when = date_label(puz)
-    byline = f"{puz['setter']}  ·  {when}" if puz.get("setter") else when
+    byline = (puz.get("blog") or {}).get("name") or "Fifteensquared"
     for pi, cols in enumerate(pages):
         c.setFillGray(0)
         c.setFont("Helvetica-Bold", 13)
@@ -438,16 +437,7 @@ def draw_explained(c, puz):
         c.drawRightString(x0 + w, y_top - 12, byline)
         c.setLineWidth(0.6)
         c.line(x0, y_top - 17, x0 + w, y_top - 17)
-        sub = "Answers and explanations from " + (blog.get("name") or "Fifteensquared")
-        if blog.get("blogger"):
-            sub += f", blogged by {blog['blogger']}"
-        c.setFont("Helvetica", 7.5)
-        c.setFillGray(0.35)
-        c.drawString(x0, y_top - HEADER_H - 6, sub)
-        if blog.get("url"):
-            c.drawRightString(x0 + w, y_top - HEADER_H - 6, blog["url"].replace("https://", ""))
-        c.setFillGray(0)
-        top = y_top - HEADER_H - EXPL_SUB_H
+        top = y_top - HEADER_H
         for ci, col in enumerate(cols):
             x = x0 + ci * (colw + COL_GAP * 2)
             y = top
@@ -456,6 +446,26 @@ def draw_explained(c, puz):
                 y = top - cell * puz["rows"] - 5 * mm
             _draw_expl_col(c, col, x, y, size, lead)
         c.showPage()
+
+
+def answer_pages(puzzles):
+    """How the answers are laid out, in the crosswords' order: a list of pages, each
+    ("full", puzzle) for a Fifteensquared write-up (its own page or pages) or ("halves", [p, p])
+    for two half-page answer sets. A half page left open before a full page is filled by the
+    next half-page answers after it, to save paper."""
+    pages, open_half = [], None
+    for p in puzzles:
+        if not has_answers(p):
+            continue
+        if explained(p):
+            pages.append(("full", p))
+        elif open_half is not None:
+            open_half[1].append(p)
+            open_half = None
+        else:
+            open_half = ("halves", [p])
+            pages.append(open_half)
+    return pages
 
 
 def _draw_pages(c, puzzles, answers):
@@ -489,12 +499,11 @@ def build_pdf(puzzles, answers=False, canvas_factory=None):
     c.setAuthor("Crossy")
     _draw_pages(c, puzzles, answers=False)
     if answers:
-        halves = [p for p in puzzles if has_answers(p) and not explained(p)]
-        if halves:
-            _draw_pages(c, halves, answers=True)
-        for p in puzzles:
-            if has_answers(p) and explained(p):
-                draw_explained(c, p)
+        for kind, what in answer_pages(puzzles):
+            if kind == "full":
+                draw_explained(c, what)
+            else:
+                _draw_pages(c, what, answers=True)
     c.save()
     return buf.getvalue()
 
