@@ -7,6 +7,7 @@ Pages
   GET /?source=<key>&page=<n>   further back in one series (n = listing page, 2 and up)
   GET /sheet.pdf                the default pair; or ?p=<id>&p=<id>... for any selection,
                                 &answers=1 for an answers page, &view=1 to open it in the browser
+  GET /settings                 weekly email settings (POST saves them, or sends a test)
   GET /health                   plain "ok", for Railway health checks
   GET /manifest.webmanifest, /icon.svg, /apple-touch-icon.png, /icon-*.png
                                 home-screen app and tab icons (no password needed)
@@ -20,6 +21,9 @@ JSON API (for the website redesign)
   GET /api/puzzles/<id>.pdf     that puzzle on its own (saved when it was fetched)
   GET /api/puzzles/<id>/grid.svg  small grid preview
 
+Weekly email (called by the Railway cron job, never by a browser)
+  POST /api/email/run           sends the weekly email if it's due; needs header X-Crossy-Token: CRON_TOKEN
+
 Puzzle summaries carry: id, source, source_name, number, title, setter, date, date_label,
 cols, rows, clues, has_tricks, solution_available, solution_date, answers_due, url, last_downloaded.
 
@@ -28,10 +32,13 @@ Environment:
   SITE_PASSWORD    the password the browser asks for (any username works); the page stays locked without it
   OPEN_ACCESS      set to true to run with no password at all
   CROSSY_DATA_DIR  where puzzles are saved (Railway volumes are picked up automatically)
+  CRON_TOKEN       shared secret the weekly job sends to /api/email/run
+  RESEND_API_KEY, EMAIL_FROM, NOTIFY_TO, EMAIL_TO   email settings (see crossy/emailer.py)
 """
-import base64, hmac, html, json, os, re, sys, urllib.parse
+import base64, datetime as dt, hmac, html, json, os, re, sys, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from crossy import emailer
 from crossy import pdf as pdfmod
 from crossy.library import Library
 from crossy.preview import grid_svg
@@ -40,8 +47,11 @@ from crossy.sources import FetchError, NotFound
 
 PASSWORD = os.environ.get("SITE_PASSWORD", "")
 OPEN = os.environ.get("OPEN_ACCESS", "").strip().lower() in ("1", "true", "yes")
+CRON_TOKEN = os.environ.get("CRON_TOKEN", "")
 
 LIBRARY = None
+EMAIL_LOCK = threading.Lock()
+LAST_TEST = 0.0
 
 
 def library():
@@ -99,7 +109,72 @@ STYLE = """
          background-position: calc(100% - .75rem) 55%, calc(100% - .4rem) 55%; background-size: .35rem .35rem; background-repeat: no-repeat; }
   .listhead select:focus-visible { outline: 2px solid var(--accent); border-radius: .3rem; }
   li[hidden] { display: none; }
+  .emailstrip { display:flex; align-items:center; gap:.75rem; margin-top:1.4rem; padding:.75rem .9rem; border-radius:.55rem;
+         background: var(--tagbg); color: var(--accent); text-decoration:none; font-size:.95rem; }
+  .emailstrip span { flex:1; }
+  .emailstrip svg { flex:none; }
+  /* settings */
+  .back { display:inline-flex; align-items:center; gap:.25rem; min-height:2.75rem; margin-left:-.35rem; font-weight:600;
+         text-decoration:none; }
+  .setrow { display:flex; align-items:center; gap:.75rem; min-height:3.5rem; padding:.5rem 0; border-bottom:1px solid var(--rule); }
+  .setrow > .what { flex:1; }
+  .switch { position:relative; flex:none; width:3.25rem; height:2rem; }
+  .switch input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; z-index:1; }
+  .switch span { position:absolute; inset:0; border-radius:1rem; background:var(--rule); transition:background .15s; }
+  .switch span::after { content:""; position:absolute; top:.1875rem; left:.1875rem; width:1.625rem; height:1.625rem;
+         border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:transform .15s; }
+  .switch input:checked + span { background:var(--accent); }
+  .switch input:checked + span::after { transform:translateX(1.25rem); }
+  .switch input:focus-visible + span { outline:2px solid var(--accent); outline-offset:2px; }
+  .days { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:.375rem; border:0; padding:0; margin:0; }
+  .days label { position:relative; }
+  .days input { position:absolute; opacity:0; width:1px; height:1px; }
+  .days span { display:flex; align-items:center; justify-content:center; height:2.75rem; border-radius:.55rem; font-weight:600;
+         border:1px solid var(--rule); background:var(--paper); cursor:pointer; }
+  .days input:checked + span { background:var(--accent); border-color:var(--accent); color:var(--paper); }
+  .days input:focus-visible + span { outline:2px solid var(--accent); outline-offset:2px; }
+  .selectwrap { position:relative; display:inline-flex; }
+  .selectwrap select { appearance:none; -webkit-appearance:none; height:2.75rem; padding:0 2.75rem 0 .9rem; border-radius:.55rem;
+         border:1px solid var(--rule); background:var(--paper); color:var(--ink); font:inherit; font-weight:600; cursor:pointer; }
+  .selectwrap svg { position:absolute; right:.875rem; top:.875rem; pointer-events:none; }
+  .addrow { display:flex; gap:.5rem; padding:.9rem 0 .25rem; }
+  .addrow input { flex:1; min-width:0; height:2.75rem; padding:0 .75rem; border-radius:.55rem; border:1px solid var(--rule);
+         background:var(--paper); color:var(--ink); font:inherit; }
+  button.soft { background:var(--tagbg); color:var(--accent); border-color:var(--tagbg); padding:0 1rem; height:2.75rem; }
+  button.ghost { background:transparent; color:var(--accent); }
+  button.x { background:none; border:0; color:var(--ink); opacity:.6; width:2.75rem; height:2.75rem; padding:0;
+         display:flex; align-items:center; justify-content:center; }
+  .notice { border-radius:.5rem; padding:.6rem .8rem; margin:0 0 1rem; background:var(--tagbg); color:var(--accent); }
+  .notice.bad { background:var(--warnbg); color:var(--warn); }
+  /* settings slides in from the right, and back out again (browsers without view transitions just switch) */
+  @view-transition { navigation: auto; }
+  @keyframes from-right { from { transform: translateX(100%); } }
+  @keyframes to-left { to { transform: translateX(-30%); } }
+  @keyframes from-left { from { transform: translateX(-30%); } }
+  @keyframes to-right { to { transform: translateX(100%); } }
+  html:active-view-transition-type(forward)::view-transition-new(root) { animation: .3s cubic-bezier(.2,.7,.2,1) both from-right; }
+  html:active-view-transition-type(forward)::view-transition-old(root) { animation: .3s cubic-bezier(.2,.7,.2,1) both to-left; }
+  html:active-view-transition-type(back)::view-transition-new(root) { animation: .3s cubic-bezier(.2,.7,.2,1) both from-left; }
+  html:active-view-transition-type(back)::view-transition-old(root) { animation: .3s cubic-bezier(.2,.7,.2,1) both to-right;
+         z-index: 1; }
+  @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; } }
 """
+
+# Picks the slide direction: into /settings slides forward, out of it slides back.
+SLIDE_JS = """<script>
+  addEventListener('pagereveal', e => {
+    if (!e.viewTransition || !window.navigation || !navigation.activation || !navigation.activation.from) return;
+    const from = new URL(navigation.activation.from.url).pathname, to = location.pathname;
+    e.viewTransition.types.add(to === '/settings' && from !== '/settings' ? 'forward'
+                               : from === '/settings' && to !== '/settings' ? 'back' : 'none');
+  });
+</script>"""
+
+MAIL_ICON = ('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+             'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2">'
+             '</rect><path d="M3 7l9 6 9-6"></path></svg>')
+CHEVRON = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+           'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{d}"></path></svg>')
 
 PAGE = """<!doctype html>
 <html lang="en"><head>
@@ -115,7 +190,7 @@ PAGE = """<!doctype html>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Crossy">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<style>{style}</style></head>
+<style>{style}</style>{slide}</head>
 <body><main>
   <h1>Crossy {general}</h1>
   {general_text}
@@ -128,6 +203,7 @@ PAGE = """<!doctype html>
       <label class="opts"><input type="checkbox" name="answers" value="1"> Include answers</label>
     </div>
     <div id="status" role="status"></div>
+    <a class="emailstrip" href="/settings">{mail_icon}<span><strong>Weekly email:</strong> {email_summary}</span>{chevron}</a>
     {listing}
   </form>
 </main>
@@ -165,6 +241,59 @@ PAGE = """<!doctype html>
   }}));
 </script>
 </body></html>
+"""
+
+SETTINGS_PAGE = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crossy: email settings</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>{style}</style>{slide}</head>
+<body><main>
+  <a class="back" href="/">{back_icon}Crossy</a>
+  <h1>Email settings</h1>
+  {notice}
+  <form method="post" action="/settings">
+    <button type="submit" name="action" value="add" tabindex="-1" aria-hidden="true"
+            style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">Save</button>
+    <div class="setrow">
+      <span class="what"><strong>Weekly Crossy email</strong><span class="meta">{next_line}</span></span>
+      <label class="switch"><input type="checkbox" name="enabled" value="1" aria-label="Weekly Crossy email"{enabled}><span></span></label>
+    </div>
+
+    <h2>When</h2>
+    <fieldset class="days"><legend class="meta" style="position:absolute;left:-9999px">Day</legend>{days}</fieldset>
+    <label class="setrow"><span class="what"><strong>Time</strong></span>
+      <span class="selectwrap"><select name="time" aria-label="Time">{times}</select>{down_icon}</span></label>
+
+    <h2>Puzzles</h2>
+    <ul>{sources}</ul>
+
+    <h2>Send to</h2>
+    <ul>{recipients}</ul>
+    <div class="addrow">
+      <input type="email" name="new_address" aria-label="Add an email address" placeholder="Add an email address" autocomplete="email">
+      <button type="submit" name="action" value="add" class="soft">Add</button>
+    </div>
+
+    <h2>Answers</h2>
+    <div class="setrow">
+      <span class="what">Include answers when published</span>
+      <label class="switch"><input type="checkbox" name="answers" value="1" aria-label="Include answers when published"{answers}><span></span></label>
+    </div>
+
+    <div class="row" style="margin-top:1.75rem">
+      <button type="submit" name="action" value="save">Save</button>
+      <button type="submit" name="action" value="test" class="ghost">Send a test now</button>
+    </div>
+    <p class="meta" style="margin-top:.9rem">{last_line}</p>
+  </form>
+</main></body></html>
 """
 
 ERROR_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -301,8 +430,45 @@ def render_page(lib, source=None, page=None):
         failed = [f for f in failed if f[1] >= oldest.get(f[0].key, 0)]
         ready = [by_id[i] for i in defaults if i in by_id]
         listing = _listing(lib, items, failed, set(defaults), order)
-    return PAGE.format(style=STYLE, ready=_ready_items(ready), general=general.badge(), general_text=general.text(),
-                       listing=listing)
+    email = emailer.load(lib.store, lib.sources)
+    return PAGE.format(style=STYLE, slide=SLIDE_JS, ready=_ready_items(ready), general=general.badge(),
+                       general_text=general.text(), listing=listing, mail_icon=MAIL_ICON,
+                       chevron=CHEVRON.format(d="M9 18l6-6-6-6"), email_summary=_esc(emailer.summary(email)))
+
+
+def render_settings(lib, notice="", bad=False):
+    st = emailer.load(lib.store, lib.sources)
+    nxt = emailer.next_send(st)
+    next_line = ("Paused. Nothing will be sent." if not st["enabled"]
+                 else f"Next: {nxt:%a} {nxt.day} {nxt:%b}, {emailer.time_label(st['time'])}" if nxt else "")
+    days = "".join(f'<label><input type="radio" name="day" value="{i}"{" checked" if st["day"] == i else ""}>'
+                   f'<span aria-label="{d}">{d[0]}</span></label>' for i, d in enumerate(emailer.DAYS))
+    times = "".join(f'<option value="{t}"{" selected" if st["time"] == t else ""}>{emailer.time_label(t)}</option>'
+                    for t in emailer.TIMES)
+    sources = "".join(
+        f'<li><label><input type="checkbox" name="source" value="{_esc(k)}"{" checked" if k in st["sources"] else ""}>'
+        f'<span class="what">{_esc(lib.source(k).name.replace("Guardian ", ""))}</span></label></li>' for k in lib.enabled)
+    x_icon = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+              'stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>')
+    recipients = "".join(
+        f'<li class="setrow"><span class="what">{_esc(a)}</span>'
+        f'<button type="submit" class="x" name="remove" value="{_esc(a)}" aria-label="Remove {_esc(a)}">{x_icon}</button></li>'
+        for a in st["recipients"]) or '<li class="setrow meta">No addresses yet</li>'
+    last = st.get("last_sent") or {}
+    last_line = ""
+    if last.get("at"):
+        try:
+            when = dt.datetime.fromisoformat(last["at"])
+            last_line = f"Last sent {when:%a} {when.day} {when:%b}, {emailer.time_label(when.strftime('%H:%M'))}"
+        except ValueError:
+            pass
+    if notice:
+        notice = f'<p class="notice{" bad" if bad else ""}" role="status">{_esc(notice)}</p>'
+    return SETTINGS_PAGE.format(
+        style=STYLE, slide=SLIDE_JS, notice=notice, next_line=_esc(next_line), enabled=" checked" if st["enabled"] else "",
+        days=days, times=times, sources=sources, recipients=recipients, answers=" checked" if st["answers"] else "",
+        last_line=_esc(last_line), back_icon=CHEVRON.format(d="M15 18l-6-6 6-6"),
+        down_icon=CHEVRON.format(d="M6 9l6 6 6-6").replace('width="18" height="18"', 'width="16" height="16"'))
 
 
 def _strip_answers(puz):
@@ -364,6 +530,72 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
             return self._send(500, ERROR_PAGE.format(msg=_esc(f"{type(e).__name__}: {e}")))
 
+    def do_POST(self):
+        url = urllib.parse.urlparse(self.path)
+        try:
+            n = min(int(self.headers.get("Content-Length") or 0), 65536)
+            form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", "replace"), keep_blank_values=True)
+            if url.path == "/api/email/run":
+                token = self.headers.get("X-Crossy-Token", "")
+                if not CRON_TOKEN or not hmac.compare_digest(token.encode(), CRON_TOKEN.encode()):
+                    return self._json({"error": "bad or missing X-Crossy-Token"}, 403)
+                return self._email_run(library(), bool(urllib.parse.parse_qs(url.query).get("force")))
+            if not PASSWORD and not OPEN:
+                return self._send(503, "Locked.", "text/plain")
+            if PASSWORD and not self._authed():
+                return self._send(401, "Password needed.", "text/plain",
+                                  {"WWW-Authenticate": 'Basic realm="Crossy", charset="UTF-8"'})
+            if url.path == "/settings":
+                return self._save_settings(library(), form)
+            return self._send(404, "Not found", "text/plain")
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            print(f"Error on POST {url.path}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+            if url.path.startswith("/api/"):
+                return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+            return self._send(500, ERROR_PAGE.format(msg=_esc(f"{type(e).__name__}: {e}")))
+
+    def _save_settings(self, lib, form):
+        action = (form.get("action") or [""])[0]
+        with EMAIL_LOCK:
+            current = emailer.load(lib.store, lib.sources)
+            new, problem = emailer.from_form(current, form, lib.enabled)
+            new["last_sent"] = current["last_sent"]
+            if problem:
+                return self._send(400, render_settings(lib, problem, bad=True))
+            if not emailer.save(lib.store, new):
+                return self._send(500, render_settings(lib, "Couldn't save: " + str(lib.store.write_error), bad=True))
+        if action == "test":
+            if not new["sources"] or not new["recipients"]:
+                return self._send(400, render_settings(lib, "Tick a puzzle and add an address first.", bad=True))
+            global LAST_TEST
+            now = dt.datetime.now().timestamp()
+            if now - LAST_TEST < 60:
+                return self._send(429, render_settings(lib, "A test went less than a minute ago. Give it a moment.", bad=True))
+            LAST_TEST = now
+            try:
+                emailer.send_sheet(lib, new, scheduled=False)
+            except Exception as e:
+                print(f"Test email failed: {e}", file=sys.stderr, flush=True)
+                return self._send(502, render_settings(lib, f"The test didn't send: {e}", bad=True))
+            return self._send(303, "", headers={"Location": "/settings?done=sent"})
+        if action in ("add",) or (form.get("remove") or [""])[0]:
+            return self._send(303, "", headers={"Location": "/settings"})
+        return self._send(303, "", headers={"Location": "/settings?done=saved"})
+
+    def _email_run(self, lib, force=False):
+        with EMAIL_LOCK:
+            st = emailer.load(lib.store, lib.sources)
+            ok, why = (True, "") if force else emailer.due(st)
+            if not ok:
+                return self._json({"sent": False, "reason": why})
+            ids, to, notes = emailer.send_sheet(lib, st, scheduled=True)
+            if not emailer.save(lib.store, st):
+                print(f"Sent, but couldn't record it: {lib.store.write_error}", file=sys.stderr, flush=True)
+        print(f"Weekly email sent to {', '.join(to)}: {' '.join(ids)}", flush=True)
+        return self._json({"sent": True, "ids": ids, "to": to, "notes": notes})
+
     def _route(self, path, q):
         lib = library()
         one = lambda k: (q.get(k) or [""])[0].strip()
@@ -375,6 +607,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_page(lib))
         if path == "/sheet.pdf":
             return self._sheet(lib, q)
+        if path == "/settings":
+            msgs = {"saved": "Saved.", "sent": "Test sent. Check your inbox (and junk)."}
+            return self._send(200, render_settings(lib, msgs.get(one("done"), "")))
         if path == "/api/sources":
             lib.refresh()
             return self._json({"sources": lib.status(), "warnings": lib.warnings()})

@@ -15,10 +15,16 @@ def default_selection(library, refresh=True):
     (the weekly job) just asks each series for its newest puzzle, which is quicker.
     Series that can't be reached are left out; library.warnings() says why.
     """
+    return latest_ids(library, DEFAULT_SOURCES, refresh)
+
+
+def latest_ids(library, keys, refresh=False):
+    """The newest puzzle id of each series in keys, in that order (series that can't be
+    reached are left out)."""
     if refresh:
-        library.refresh(DEFAULT_SOURCES)
+        library.refresh(keys)
     ids = []
-    for key in DEFAULT_SOURCES:
+    for key in keys:
         pid = library.latest_id(key, use_index=refresh)
         if pid:
             ids.append(pid)
