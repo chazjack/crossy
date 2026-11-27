@@ -14,19 +14,22 @@ Usage
   python3 crossword_sheet.py --print --printer "HP_OfficeJet"
   python3 crossword_sheet.py --from-json a.json b.json   # saved Guardian puzzle JSON (offline / testing)
   python3 crossword_sheet.py --email           # email the PDF via Resend (e.g. to a printer)
+  python3 crossword_sheet.py --scheduled       # the cron job: the website sends the weekly email if it's due
 
 Email settings come from environment variables:
   RESEND_API_KEY   your Resend API key
   EMAIL_FROM       sender on your verified Resend domain, e.g. "Crosswords <crosswords@example.com>"
   EMAIL_TO         where to send the PDF; comma-separate several (printer address, yourself, ...)
   NOTIFY_TO        optional: where to send a short note if a run fails
+  CROSSY_URL, CRON_TOKEN   for --scheduled: the website's address and the shared secret
 
 Puzzles are saved in CROSSY_DATA_DIR (default ~/.crossy), so each is fetched once.
 
 Needs: Python 3.9+ and reportlab  (pip3 install reportlab)
 """
-import argparse, base64, json, os, subprocess, sys, urllib.error, urllib.request
+import argparse, json, os, subprocess, sys, urllib.error, urllib.request
 
+from crossy import emailer
 from crossy import pdf as pdfmod
 from crossy import sources as srcmod
 from crossy.library import Library
@@ -36,28 +39,38 @@ from crossy.store import Store
 
 
 # ---------------------------------------------------------------- email (Resend)
-def _addresses(s):
-    return [x.strip() for x in (s or "").split(",") if x.strip()]
+_addresses = emailer.addresses
 
 
 def send_email(to, subject, text, attachment_path=None):
-    key, sender = os.environ.get("RESEND_API_KEY"), os.environ.get("EMAIL_FROM")
-    if not (key and sender and to):
-        raise RuntimeError("Set RESEND_API_KEY, EMAIL_FROM and EMAIL_TO to send email.")
-    body = {"from": sender, "to": to, "subject": subject, "text": text}
+    attachment = None
     if attachment_path:
         with open(attachment_path, "rb") as f:
-            body["attachments"] = [{"filename": os.path.basename(attachment_path),
-                                    "content": base64.b64encode(f.read()).decode("ascii")}]
-    req = urllib.request.Request(
-        "https://api.resend.com/emails", data=json.dumps(body).encode("utf-8"), method="POST",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "User-Agent": "guardian-crosswords/1.0"})
+            attachment = (os.path.basename(attachment_path), f.read())
+    return emailer.send(to, subject, text, attachment)
+
+
+def scheduled_run():
+    """Ask the website to send the weekly email if it's due (it holds the settings and puzzles)."""
+    base, token = os.environ.get("CROSSY_URL", "").rstrip("/"), os.environ.get("CRON_TOKEN", "")
+    if not (base and token):
+        raise RuntimeError("Set CROSSY_URL and CRON_TOKEN on this service for --scheduled.")
+    req = urllib.request.Request(base + "/api/email/run", data=b"", method="POST",
+                                 headers={"X-Crossy-Token": token, "User-Agent": "crossy-cron/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read() or b"{}")
+        # the site may be asleep; waking it and fetching puzzles can take a while
+        with urllib.request.urlopen(req, timeout=240) as r:
+            res = json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Resend refused the email ({e.code}): {e.read().decode(errors='replace')}")
+        try:
+            msg = json.loads(e.read() or b"{}").get("error") or e.reason
+        except ValueError:
+            msg = e.reason
+        raise RuntimeError(f"the website couldn't send it ({e.code}): {msg}")
+    if res.get("sent"):
+        print(f"Sent to {', '.join(res['to'])}: {' '.join(res['ids'])}", flush=True)
+    else:
+        print(f"Not sending now: {res.get('reason')}.", flush=True)
 
 
 # ---------------------------------------------------------------- log output
@@ -96,7 +109,11 @@ def main():
     ap.add_argument("--print", action="store_true", help="send the PDF to the printer")
     ap.add_argument("--printer", help="printer name (see `lpstat -p`); default printer if omitted")
     ap.add_argument("--email", action="store_true", help="email the PDF to EMAIL_TO via Resend")
+    ap.add_argument("--scheduled", action="store_true",
+                    help="for the cron job: ask the website (CROSSY_URL) to send the weekly email if it's due")
     a = ap.parse_args()
+    if a.scheduled:
+        a.email = True                   # so a failure sends the note to NOTIFY_TO
     try:
         run(a)
     except (Exception, SystemExit) as e:
@@ -115,6 +132,8 @@ def main():
 
 
 def run(a):
+    if a.scheduled:
+        return scheduled_run()
     lib = Library(Store(a.data) if a.data else None)
 
     if a.list:
@@ -154,7 +173,7 @@ def run(a):
 
     if a.email:
         to = _addresses(os.environ.get("EMAIL_TO"))
-        subject = " & ".join(p["title"].replace(" No ", " ") for p in puzzles)
+        subject = emailer.subject(puzzles)
         res = send_email(to, subject, "This week's crosswords are attached. Happy solving!", path)
         print(f"Emailed to {', '.join(to)} (id {res.get('id', '?')}).")
 
