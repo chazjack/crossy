@@ -47,15 +47,34 @@ class ServerTests(unittest.TestCase):
     def test_health(self):
         self.assertEqual(self.get("/health")[0], 200)
 
+    def test_home_screen_app(self):
+        page = self.get("/")[2].decode()
+        for tag in ('rel="manifest" href="/manifest.webmanifest"', 'rel="apple-touch-icon" href="/apple-touch-icon.png"',
+                    'rel="icon" href="/icon.svg"'):
+            self.assertIn(tag, page)
+        code, headers, body = self.get("/manifest.webmanifest")
+        m = json.loads(body)
+        self.assertEqual((code, m["display"], m["start_url"]), (200, "standalone", "/"))
+        for icon in m["icons"] + [{"src": "/apple-touch-icon.png"}, {"src": "/favicon.ico"}]:
+            code, headers, body = self.get(icon["src"])
+            self.assertEqual(code, 200, icon["src"])
+            self.assertTrue(body[:4] in (b"\x89PNG", b"<svg"), icon["src"])
+
     def test_page_lists_puzzles_with_the_default_ticked(self):
         code, _, body = self.get("/")
         page = body.decode()
         self.assertEqual(code, 200)
-        self.assertIn("Ready to download: Guardian Quick crossword (Fri 27 Nov) and Guardian Quick Cryptic "
-                      "(Sat 21 Nov).", page)
-        self.assertIn('value="guardian-quick-17648" checked', page)
-        self.assertIn('value="guardian-quick-cryptic-138" checked', page)
-        self.assertIn('value="guardian-quiptic-1409">', page)
+        self.assertIn('<ul id="ready"><li>Guardian Quick crossword No 17,648<span class="meta">Fri 27 Nov</span></li>'
+                      '<li>Guardian Quick Cryptic No 138<span class="meta">Sat 21 Nov</span></li></ul>', page)
+        self.assertRegex(page, r'value="guardian-quick-17648" [^>]*checked')
+        self.assertRegex(page, r'value="guardian-quick-cryptic-138" [^>]*checked')
+        self.assertNotRegex(page, r'value="guardian-quiptic-1409" [^>]*checked')
+        # one list, newest first, with a dropdown to pick the type
+        self.assertIn('<option value="all">All crosswords</option>', page)
+        self.assertIn('<option value="guardian-quiptic">Guardian Quiptic (', page)
+        order = [page.index(f'value="{i}"') for i in
+                 ("guardian-quick-17648", "guardian-quick-17647", "guardian-quiptic-1409", "guardian-quick-cryptic-138")]
+        self.assertEqual(order, sorted(order))
         self.assertNotIn('name="quick"', page)              # the old number boxes are gone
         self.assertIn("Include answers", page)
         self.assertIn('title="Answers available">A<', page)
@@ -67,7 +86,7 @@ class ServerTests(unittest.TestCase):
         self.lib.refresh(["guardian-quiptic"], force=True)
         try:
             page = self.get("/")[2].decode()
-            self.assertIn("Couldn't fetch<span class=\"meta\">No 1,410</span>", page)
+            self.assertIn("Guardian Quiptic No 1,410<span class=\"meta\">Couldn't fetch</span>", page)
             self.assertIn('class="warntext"', page)
             self.assertIn("No puzzle data on the page", page)
         finally:
@@ -137,6 +156,22 @@ class ServerTests(unittest.TestCase):
 
 
 class LockTests(unittest.TestCase):
+    def test_icons_need_no_password(self):
+        with mock.patch.object(server, "OPEN", False), mock.patch.object(server, "PASSWORD", "secret"):
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            base = f"http://127.0.0.1:{httpd.server_address[1]}"
+            try:
+                for path in ("/manifest.webmanifest", "/apple-touch-icon.png", "/icon.svg"):
+                    with urllib.request.urlopen(base + path, timeout=10) as r:
+                        self.assertEqual(r.status, 200)
+                with self.assertRaises(urllib.error.HTTPError) as e:
+                    urllib.request.urlopen(base + "/", timeout=10)
+                self.assertEqual(e.exception.code, 401)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+
     def test_locked_without_password_or_open_access(self):
         with mock.patch.object(server, "OPEN", False), mock.patch.object(server, "PASSWORD", ""):
             httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)

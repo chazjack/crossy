@@ -8,6 +8,8 @@ Pages
   GET /sheet.pdf                the default pair; or ?p=<id>&p=<id>... for any selection,
                                 &answers=1 for an answers page, &view=1 to open it in the browser
   GET /health                   plain "ok", for Railway health checks
+  GET /manifest.webmanifest, /icon.svg, /apple-touch-icon.png, /icon-*.png
+                                home-screen app and tab icons (no password needed)
 
 JSON API (for the website redesign)
   GET /api/puzzles              {"default": [...], "puzzles": [...], "sources": [...], "warnings": [...]}
@@ -86,27 +88,51 @@ STYLE = """
   a { color: var(--accent); }
   .more { font-size:.9rem; display:inline-block; margin-top:.6rem; }
   #status { font-size: .95rem; min-height: 1.4em; margin-top: .7rem; }
+  .readyhead { margin: 0 0 .3rem; font-weight: 650; }
+  #ready { list-style: disc; padding-left: 1.25rem; margin: 0 0 1.3rem; }
+  #ready li { border: 0; padding: .12rem 0; }
+  #ready .meta { display: inline; margin-left: .35rem; }
+  .listhead { margin: 2rem 0 .3rem; position: relative; display:flex; align-items:center; gap:.5rem; }
+  .listhead select { appearance: none; -webkit-appearance: none; font-family: inherit; font-size: 1.05rem; font-weight: 700;
+         color: var(--ink); background: transparent; border: 0; padding: .3rem 1.6rem .3rem 0; cursor: pointer;
+         background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+         background-position: calc(100% - .75rem) 55%, calc(100% - .4rem) 55%; background-size: .35rem .35rem; background-repeat: no-repeat; }
+  .listhead select:focus-visible { outline: 2px solid var(--accent); border-radius: .3rem; }
+  li[hidden] { display: none; }
 """
 
 PAGE = """<!doctype html>
 <html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crossy</title><style>{style}</style></head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crossy</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Crossy">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>{style}</style></head>
 <body><main>
   <h1>Crossy {general}</h1>
   {general_text}
-  <p class="sub">{ready}</p>
   <form action="/sheet.pdf" method="get" onsubmit="return busy()">
     <input type="hidden" name="form" value="1">
+    <p class="readyhead">Ready to download</p>
+    <ul id="ready">{ready}</ul>
     <div class="row">
       <button type="submit">Download PDF</button>
       <label class="opts"><input type="checkbox" name="answers" value="1"> Include answers</label>
     </div>
     <div id="status" role="status"></div>
-    {sections}
+    {listing}
   </form>
 </main>
 <script>
+  const esc = s => s.replace(/[&<>"]/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
   function busy() {{
     const s = document.getElementById('status');
     if (!document.querySelector('input[name=p]:checked')) {{ s.textContent = 'Tick at least one puzzle.'; return false; }}
@@ -114,7 +140,25 @@ PAGE = """<!doctype html>
     setTimeout(() => {{ s.textContent = ''; }}, 6000);
     return true;
   }}
-  // a "!" opens its explanation underneath (in the row, the heading or the title)
+  // "Ready to download" lists whatever is ticked, in sheet order
+  function ready() {{
+    const ticked = [...document.querySelectorAll('input[name=p]:checked')];
+    document.getElementById('ready').innerHTML = ticked.length
+      ? ticked.map(i => `<li>${{esc(i.dataset.title)}}<span class="meta">${{esc(i.dataset.date)}}</span></li>`).join('')
+      : '<li class="meta">Nothing ticked yet</li>';
+  }}
+  document.querySelectorAll('input[name=p]').forEach(i => i.addEventListener('change', ready));
+  // the heading picks which crosswords the list shows
+  const type = document.getElementById('type');
+  if (type) type.addEventListener('change', () => {{
+    document.querySelectorAll('#puzzles > li').forEach(li => {{
+      li.hidden = type.value !== 'all' && li.dataset.source !== type.value;
+    }});
+    const more = document.getElementById('more');
+    more.hidden = type.value === 'all';
+    more.href = '/?source=' + encodeURIComponent(type.value) + '&page=2';
+  }});
+  // a "!" opens its explanation underneath
   document.querySelectorAll('details.warn').forEach(d => d.addEventListener('toggle', () => {{
     const t = document.getElementById(d.dataset.for);
     if (t) t.hidden = !d.open;
@@ -127,6 +171,28 @@ ERROR_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" conte
 <title>Crossy: something went wrong</title>
 <body style="font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1.25rem">
 <h1>Couldn't make the sheet</h1><p>{msg}</p><p><a href="/">Back</a></p></body>"""
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+STATIC = {                       # served without a password, so phones can fetch the icons
+    "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/favicon.ico": ("icon-192.png", "image/png"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+    "/icon-maskable-512.png": ("icon-maskable-512.png", "image/png"),
+}
+MANIFEST = {
+    "name": "Crossy", "short_name": "Crossy",
+    "description": "Guardian crosswords, ready to print",
+    "start_url": "/", "scope": "/", "display": "standalone",
+    "background_color": "#faf8f3", "theme_color": "#052962",
+    "icons": [
+        {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    ],
+}
 
 ID_RE = re.compile(r"^/api/puzzles/([a-z0-9-]+?-\d+)(\.pdf|/grid\.svg)?$")
 
@@ -158,72 +224,85 @@ class _Warn:
 
 
 def _puzzle_row(s, checked):
-    bits = [f'No {s["number"]:,}', s.get("setter") or ""]
-    meta = " · ".join(b for b in bits if b)
+    meta = " · ".join(b for b in [s.get("date_label") or "", s.get("setter") or ""] if b)
     tags = ""
     if s.get("last_downloaded"):
         tags += '<span class="tag" title="Downloaded before">printed</span>'
     if s.get("solution_available"):
         tags += '<span class="tag a" title="Answers available">A</span>'
-    return (f'<li><label><input type="checkbox" name="p" value="{_esc(s["id"])}"{" checked" if checked else ""}>'
-            f'<span class="what">{_esc(s.get("date_label") or s["title"])}<span class="meta">{_esc(meta)}</span></span>'
+    return (f'<li data-source="{_esc(s["source"])}"><label>'
+            f'<input type="checkbox" name="p" value="{_esc(s["id"])}" data-title="{_esc(s["title"])}" '
+            f'data-date="{_esc(s.get("date_label"))}"{" checked" if checked else ""}>'
+            f'<span class="what">{_esc(s["title"])}<span class="meta">{_esc(meta)}</span></span>'
             f'{tags}</label></li>')
 
 
-def _failed_row(number, message):
+def _failed_row(src, number, message):
     w = _Warn([message[:1].upper() + message[1:]])
-    return (f'<li><div class="failed"><span class="box"></span><span class="what">Couldn\'t fetch'
-            f'<span class="meta">No {int(number):,}</span></span>{w.badge()}</div>{w.text()}</li>')
+    return (f'<li data-source="{_esc(src.key)}"><div class="failed"><span class="box"></span>'
+            f'<span class="what">{_esc(src.name)} No {int(number):,}<span class="meta">Couldn\'t fetch</span></span>'
+            f'{w.badge()}</div>{w.text()}</li>')
 
 
-def _rows(items, failed, defaults):
-    """Saved puzzles and failed ones, newest (highest number) first."""
-    rows = [(s["number"], _puzzle_row(s, s["id"] in defaults)) for s in items]
-    rows += [(n, _failed_row(n, msg)) for n, msg in failed]
-    return "".join(r for _, r in sorted(rows, key=lambda r: -r[0]))
+def _ready_items(summaries):
+    if not summaries:
+        return '<li class="meta">Nothing ticked yet</li>'
+    return "".join(f'<li>{_esc(s["title"])}<span class="meta">{_esc(s.get("date_label"))}</span></li>'
+                   for s in summaries)
+
+
+def _listing(lib, items, failed, defaults, order, single=None, page=None):
+    """One list, newest first. failed: [(source, number, message)], placed next to their neighbours."""
+    rows = [((s.get("date") or ""), -order.get(s["source"], 99), s["number"], _puzzle_row(s, s["id"] in defaults))
+            for s in items]
+    for src, n, msg in failed:
+        newer = [s for s in items if s["source"] == src.key and s["number"] > n]
+        date = min(newer, key=lambda s: s["number"])["date"] if newer else "9999"
+        rows.append((date, -order.get(src.key, 99), n, _failed_row(src, n, msg)))
+    rows.sort(key=lambda r: r[:3], reverse=True)
+    body = "".join(r[3] for r in rows) or '<li class="meta">No puzzles saved yet.</li>'
+    if single:
+        src = lib.source(single)
+        head = f'<h2 class="listhead">{_esc(src.name)}, further back</h2>'
+        more = (f'<a class="more" href="/?source={_esc(single)}&amp;page={page + 1}">Older</a> · '
+                '<a class="more" href="/">Back to this month</a>')
+    else:
+        counts = {}
+        for s in items:
+            counts[s["source"]] = counts.get(s["source"], 0) + 1
+        opts = '<option value="all">All crosswords</option>' + "".join(
+            f'<option value="{_esc(k)}">{_esc(lib.source(k).name)} ({counts.get(k, 0)})</option>' for k in lib.enabled)
+        head = f'<div class="listhead"><select id="type" aria-label="Which crosswords to show">{opts}</select></div>'
+        more = '<a class="more" id="more" href="#" hidden>Older puzzles</a>'
+    return f'{head}<ul id="puzzles">{body}</ul>{more}'
 
 
 def render_page(lib, source=None, page=None):
-    warnings = lib.warnings()
-    general = _Warn([w["message"] for w in warnings if not w["source"]])
-    failed_by_source = {}
-    for w in warnings:
-        if w["puzzle"]:
-            failed_by_source.setdefault(w["source"], []).append(
-                (int(w["puzzle"].rsplit("-", 1)[1]), w["message"].split(": ", 1)[-1]))
-    if source and page:
-        src = lib.source(source)
-        items = lib.older(source, page)
-        nums = {s["number"] for s in items}
-        lo, hi = (min(nums), max(nums)) if nums else (0, 0)
-        failed = [(n, m) for n, m in failed_by_source.get(source, []) if lo <= n <= hi]
-        sections = (f"<h2>{_esc(src.name)}, further back</h2><ul>" + _rows(items, failed, set()) + "</ul>"
-                    + f'<a class="more" href="/?source={_esc(source)}&amp;page={page + 1}">Older</a> · '
-                    + '<a class="more" href="/">Back to this month</a>')
-        ready = "Tick the puzzles you want on the sheet."
-    else:
+    if not (source and page):
         lib.refresh()
+    warnings = lib.warnings()
+    general = _Warn([w["message"] for w in warnings if not w["source"] or not w["puzzle"]])
+    order = {k: i for i, k in enumerate(lib.enabled)}
+    failed = [(lib.source(w["source"]), int(w["puzzle"].rsplit("-", 1)[1]), w["message"].split(": ", 1)[-1])
+              for w in warnings if w["puzzle"]]
+    if source and page:
+        items = lib.older(source, page)
+        nums = [s["number"] for s in items]
+        failed = [f for f in failed if f[0].key == source and nums and min(nums) <= f[1] <= max(nums)]
+        defaults, ready = set(), []
+        listing = _listing(lib, items, failed, defaults, order, single=source, page=page)
+    else:
         defaults = default_selection(lib)
-        recent = lib.recent()
-        by_id = {s["id"]: s for s in recent}
-        names = [f'{by_id[i]["source_name"]} ({by_id[i]["date_label"]})' for i in defaults if i in by_id]
-        ready = ("Ready to download: " + " and ".join(names) + "." if names
-                 else "Tick the puzzles you want on the sheet.")
-        sections = ""
-        for key in lib.enabled:
-            src = lib.source(key)
-            rows = [s for s in recent if s["source"] == key]
-            oldest = min((s["number"] for s in rows), default=0)
-            failed = [(n, m) for n, m in failed_by_source.get(key, []) if n >= oldest]
-            series = _Warn([w["message"] for w in warnings if w["source"] == key and not w["puzzle"]])
-            sections += f"<h2>{_esc(src.name)} {series.badge()}</h2>{series.text()}"
-            if rows or failed:
-                sections += "<ul>" + _rows(rows, failed, defaults) + "</ul>"
-            else:
-                sections += '<p class="meta">No puzzles saved yet.</p>'
-            sections += f'<a class="more" href="/?source={_esc(key)}&amp;page=2">Older puzzles</a>'
-    return PAGE.format(style=STYLE, ready=_esc(ready), general=general.badge(), general_text=general.text(),
-                       sections=sections)
+        items = lib.recent()
+        by_id = {s["id"]: s for s in items}
+        oldest = {}
+        for s in items:
+            oldest[s["source"]] = min(oldest.get(s["source"], s["number"]), s["number"])
+        failed = [f for f in failed if f[1] >= oldest.get(f[0].key, 0)]
+        ready = [by_id[i] for i in defaults if i in by_id]
+        listing = _listing(lib, items, failed, set(defaults), order)
+    return PAGE.format(style=STYLE, ready=_ready_items(ready), general=general.badge(), general_text=general.text(),
+                       listing=listing)
 
 
 def _strip_answers(puz):
@@ -264,6 +343,12 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/health":
             return self._send(200, "ok", "text/plain")
+        if url.path in STATIC:
+            name, ctype = STATIC[url.path]
+            with open(os.path.join(STATIC_DIR, name), "rb") as f:
+                return self._send(200, f.read(), ctype, cache="public, max-age=604800")
+        if url.path == "/manifest.webmanifest":
+            return self._send(200, json.dumps(MANIFEST), "application/manifest+json", cache="public, max-age=3600")
         if not PASSWORD and not OPEN:       # closed until a password is set (or OPEN_ACCESS=true)
             return self._send(503, "Locked: set SITE_PASSWORD (or OPEN_ACCESS=true) on this service in Railway.", "text/plain")
         if PASSWORD and not self._authed():
