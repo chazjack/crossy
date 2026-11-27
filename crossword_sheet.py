@@ -266,6 +266,22 @@ def send_email(to, subject, text, attachment_path=None):
         raise RuntimeError(f"Resend refused the email ({e.code}): {e.read().decode(errors='replace')}")
 
 
+# ---------------------------------------------------------------- log output
+def print_summary(label, puz):
+    """Write what was fetched to the log, so a run can be checked without the PDF."""
+    when = dt.datetime.fromtimestamp(puz["date"] / 1000, dt.timezone.utc).strftime("%a %-d %b %Y")
+    setter = (puz.get("creator") or {}).get("name", "?")
+    d = puz["dimensions"]
+    print(f"\n=== {label} No {puz['number']:,} by {setter}, {when} ({d['cols']}x{d['rows']}, "
+          f"{len(puz['entries'])} clues) ===")
+    for direction in ("across", "down"):
+        print(f"  {direction.upper()}")
+        for e in puz["entries"]:
+            if e["direction"] == direction:
+                print(f"    {e['humanNumber']:>3}  {clean(e['clue'])}")
+    print(flush=True)
+
+
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -300,6 +316,9 @@ def run(a):
         quick, quiptic = (json.load(open(f, encoding="utf-8")) for f in a.from_json)
     else:
         quick, quiptic = fetch_puzzle("quick-cryptic", a.quick), fetch_puzzle("quiptic", a.quiptic)
+
+    for label, puz in (("QUICK CRYPTIC", quick), ("QUIPTIC", quiptic)):
+        print_summary(label, puz)
 
     os.makedirs(a.out, exist_ok=True)
     path = os.path.join(a.out, f"crosswords_QC{quick['number']}_Q{quiptic['number']}.pdf")
