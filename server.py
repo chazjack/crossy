@@ -10,6 +10,7 @@ A small private web page for downloading the crossword sheet on demand.
 Environment:
   PORT             set by Railway
   SITE_PASSWORD    the password the browser asks for (any username works); the page stays locked without it
+  OPEN_ACCESS      set to true to run with no password at all
 """
 import base64, hmac, html, os, sys, tempfile, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import crossword_sheet as cs
 
 PASSWORD = os.environ.get("SITE_PASSWORD", "")
+OPEN = os.environ.get("OPEN_ACCESS", "").strip().lower() in ("1", "true", "yes")
 
 PAGE = """<!doctype html>
 <html lang="en"><head>
@@ -123,9 +125,9 @@ class Handler(BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/health":
             return self._send(200, "ok", "text/plain")
-        if not PASSWORD:                    # closed until a password is set
-            return self._send(503, "Locked: set SITE_PASSWORD on this service in Railway.", "text/plain")
-        if not self._authed():
+        if not PASSWORD and not OPEN:       # closed until a password is set (or OPEN_ACCESS=true)
+            return self._send(503, "Locked: set SITE_PASSWORD (or OPEN_ACCESS=true) on this service in Railway.", "text/plain")
+        if PASSWORD and not self._authed():
             return self._send(401, "Password needed.", "text/plain",
                               {"WWW-Authenticate": 'Basic realm="Crossy", charset="UTF-8"'})
         if url.path == "/":
@@ -160,7 +162,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     port = int(os.environ.get("PORT", "8000"))
-    if not PASSWORD:
+    if PASSWORD:
+        print("Password protection on.", flush=True)
+    elif OPEN:
+        print("OPEN_ACCESS is on: no password, anyone with the link can use the page.", flush=True)
+    else:
         print("SITE_PASSWORD isn't set, so the page stays locked until you add it.", flush=True)
     print(f"Crossy listening on port {port}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
