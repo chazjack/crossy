@@ -4,7 +4,8 @@ Every Saturday morning this grabs the latest Guardian **Quick Cryptic** and **Qu
 lays them out one above the other on a single A4 page, and emails the PDF to your
 printer, which prints it.
 
-It runs as a Railway cron job and sends through Resend.
+It runs as a Railway cron job and sends through Resend. There is also an optional private
+download page (`server.py`, see below).
 
 ## Railway setup (one time)
 
@@ -25,6 +26,19 @@ It runs as a Railway cron job and sends through Resend.
 4. Deploy. Railway builds the image (it spots `requirements.txt` and installs reportlab).
    To test without waiting for Saturday, temporarily set the cron to a few minutes from
    now (cron times are UTC), check the logs, then set it back.
+
+## Download page (optional second service)
+
+`server.py` is a small password-protected page for downloading the sheet whenever you want,
+including older puzzles by number.
+
+1. In the same Railway project, add **another** service from this repo: *New → GitHub Repo*.
+2. **Settings → Deploy:**
+   - **Start Command:** `python server.py`
+   - **Cron Schedule:** leave empty
+   - **Serverless:** on (it sleeps when idle, so it costs next to nothing)
+3. **Settings → Networking → Generate Domain** to get its web address.
+4. **Variables:** `SITE_PASSWORD`, which is the password your browser asks for (any username works).
 
 ## Printer setup (Brother Email Print)
 
