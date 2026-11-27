@@ -40,6 +40,46 @@ class FakeHTTP:
         return self.pages[url]
 
 
+class SlowDownTests(unittest.TestCase):
+    """A 429 ("too many requests") is waited out and retried rather than recorded as a failure."""
+
+    def _run(self, codes):
+        from unittest import mock
+        import io
+        import urllib.error
+        from crossy.sources import base
+        calls, waits = [], []
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(req.full_url)
+            code = codes[len(calls) - 1]
+            if code == 200:
+                return io.BytesIO(b"ok")
+            raise urllib.error.HTTPError(req.full_url, code, "x", {"Retry-After": "2"} if code == 429 else {}, None)
+
+        with mock.patch.object(base.urllib.request, "urlopen", fake_urlopen):
+            try:
+                return base.http_get("https://example.test/p", sleep=waits.append), calls, waits
+            except FetchError as e:
+                return e, calls, waits
+
+    def test_429_then_ok(self):
+        result, calls, waits = self._run([429, 429, 200])
+        self.assertEqual(result, "ok")
+        self.assertEqual(waits, [2.0, 2.0])
+
+    def test_429_every_time_gives_a_clear_error(self):
+        result, calls, waits = self._run([429] * 4)
+        self.assertIsInstance(result, FetchError)
+        self.assertIn("slow down", str(result))
+        self.assertEqual(len(calls), 4)
+
+    def test_404_is_not_retried(self):
+        result, calls, _ = self._run([404])
+        self.assertIsInstance(result, NotFound)
+        self.assertEqual(len(calls), 1)
+
+
 class GuardianTests(unittest.TestCase):
     def src(self, pages, slug="quick"):
         return GuardianSource(slug, "Quick crossword" if slug == "quick" else "Quick Cryptic",
@@ -52,8 +92,7 @@ class GuardianTests(unittest.TestCase):
                     "guardian-everyman", "guardian-speedy"):
             self.assertIn(key, sources.ALL)
         self.assertEqual(sources.enabled_keys(), ["guardian-quick", "guardian-quick-cryptic", "guardian-quiptic",
-                                                  "guardian-cryptic", "guardian-prize", "guardian-everyman",
-                                                  "guardian-speedy"])
+                                                  "guardian-cryptic", "guardian-prize"])
         src, n = sources.split_id("guardian-quick-cryptic-138")
         self.assertEqual((src.key, n), ("guardian-quick-cryptic", 138))
 

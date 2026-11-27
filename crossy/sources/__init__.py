@@ -1,6 +1,6 @@
 """The registry of puzzle series.
 
-DEFAULT_ENABLED is what the website lists and refreshes (every Guardian series, for now).
+DEFAULT_ENABLED is what the website lists and refreshes.
 CROSSY_SOURCES, a comma-separated list of keys, overrides it. Anything in ALL can be fetched by id.
 """
 from __future__ import annotations
@@ -18,15 +18,17 @@ def _guardian():
         GuardianSource("quiptic", "Guardian Quiptic", "Mondays", "cryptic"),
         GuardianSource("cryptic", "Guardian Cryptic", "Monday to Friday", "cryptic"),
         GuardianSource("prize", "Guardian Prize", "Saturdays", "cryptic"),
-        GuardianSource("everyman", "Guardian Everyman", "Sundays", "cryptic"),
-        GuardianSource("speedy", "Guardian Speedy", "Sundays", "quick"),
+        GuardianSource("everyman", "Guardian Everyman", "Sundays (until April 2025)", "cryptic"),
+        GuardianSource("speedy", "Guardian Speedy", "Sundays (until April 2025)", "quick"),
     ]
 
 
 ALL = {s.key: s for s in _guardian()}
 
+# Everyman and Speedy are registered but not listed: the Guardian stopped publishing them in
+# April 2025, so their newest puzzles are older than the month the page shows.
 DEFAULT_ENABLED = ["guardian-quick", "guardian-quick-cryptic", "guardian-quiptic", "guardian-cryptic",
-                   "guardian-prize", "guardian-everyman", "guardian-speedy"]
+                   "guardian-prize"]
 
 
 def enabled_keys():
