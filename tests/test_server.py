@@ -64,8 +64,8 @@ class ServerTests(unittest.TestCase):
         code, _, body = self.get("/")
         page = body.decode()
         self.assertEqual(code, 200)
-        self.assertIn('<ul id="ready"><li>Guardian Quick crossword No 17,648<span class="meta">Fri 27 Nov</span></li>'
-                      '<li>Guardian Quick Cryptic No 138<span class="meta">Sat 21 Nov</span></li></ul>', page)
+        self.assertIn('<ul id="ready"><li>Guardian Quick crossword<span class="meta">Fri 27 Nov - No 17,648</span></li>'
+                      '<li>Guardian Quick Cryptic<span class="meta">Sat 21 Nov - No 138</span></li></ul>', page)
         self.assertRegex(page, r'value="guardian-quick-17648" [^>]*checked')
         self.assertRegex(page, r'value="guardian-quick-cryptic-138" [^>]*checked')
         self.assertNotRegex(page, r'value="guardian-quiptic-1409" [^>]*checked')
@@ -79,6 +79,11 @@ class ServerTests(unittest.TestCase):
         self.assertIn("Include answers", page)
         self.assertIn('title="Answers available">A<', page)
         self.assertNotIn("Open in browser", page)
+        self.assertNotIn("Older puzzles", page)                # just "Show more"
+        self.assertIn("const PAGE_SIZE = 10;", page)
+        # include answers sits above the buttons; Email now is beside Download PDF
+        self.assertLess(page.index('name="answers"'), page.index("Download PDF"))
+        self.assertLess(page.index("Download PDF"), page.index('id="emailnow"'))
 
     def test_failed_puzzle_shows_a_badge_in_its_list(self):
         from crossy.sources import FetchError
@@ -86,7 +91,7 @@ class ServerTests(unittest.TestCase):
         self.lib.refresh(["guardian-quiptic"], force=True)
         try:
             page = self.get("/")[2].decode()
-            self.assertIn("Guardian Quiptic No 1,410<span class=\"meta\"> - Couldn't fetch</span>", page)
+            self.assertIn("Guardian Quiptic<span class=\"meta\">No 1,410 - Couldn't fetch</span>", page)
             self.assertIn('class="warntext"', page)
             self.assertIn("No puzzle data on the page", page)
         finally:

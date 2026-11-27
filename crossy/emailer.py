@@ -232,6 +232,17 @@ def send(to, subject, text, attachment=None, html_text=None):
         raise RuntimeError(f"Resend refused the email ({e.code}): {e.read().decode(errors='replace')}")
 
 
+def send_puzzles(lib, ids, answers, to):
+    """Build one PDF of these puzzles (in this order) and email it to `to`. Returns (Resend's reply, notes)."""
+    pdf, name, notes = lib.sheet(ids, answers=answers)
+    puzzles = [lib.get(i) for i in ids]
+    paragraphs = ["This week's crosswords are attached. Happy solving!"]
+    if notes:
+        paragraphs.append(" ".join(notes))
+    res = send(to, subject(puzzles), "\n\n".join(paragraphs), (name, pdf), html_body(paragraphs))
+    return res, notes
+
+
 def send_sheet(lib, settings, scheduled=True, now=None):
     """Build the sheet from the settings and email it. Returns (ids, recipients, notes).
     A scheduled send is recorded in settings["last_sent"], so it goes at most once a day;
@@ -240,13 +251,8 @@ def send_sheet(lib, settings, scheduled=True, now=None):
     ids = latest_ids(lib, settings["sources"])
     if not ids:
         raise RuntimeError("couldn't find any puzzles: " + "; ".join(w["message"] for w in lib.warnings()))
-    pdf, name, notes = lib.sheet(ids, answers=settings["answers"])
-    puzzles = [lib.get(i) for i in ids]
     to = settings["recipients"]
-    paragraphs = ["This week's crosswords are attached. Happy solving!"]
-    if notes:
-        paragraphs.append(" ".join(notes))
-    res = send(to, subject(puzzles), "\n\n".join(paragraphs), (name, pdf), html_body(paragraphs))
+    res, notes = send_puzzles(lib, ids, settings["answers"], to)
     now = now or now_uk()
     if not scheduled:
         return ids, to, notes

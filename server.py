@@ -53,6 +53,7 @@ CRON_TOKEN = os.environ.get("CRON_TOKEN", "")
 LIBRARY = None
 EMAIL_LOCK = threading.Lock()
 LAST_TEST = 0.0
+LAST_NOW = 0.0
 
 
 def library():
@@ -64,33 +65,36 @@ def library():
 
 STYLE = """
   :root { color-scheme: light dark; --ink:#1b1b1b; --paper:#faf8f3; --rule:#d9d4c7; --accent:#052962;
-          --warn:#8a4b00; --warnbg:#fff3df; --tagbg:#e8eef8; }
+          --warn:#8a4b00; --warnbg:#fff3df; --tagbg:#e8eef8; --ring:transparent; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme=light]) { color-scheme: dark; --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff;
-          --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; } }
+          --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; --ring:#ece9e1; } }
   :root[data-theme=light] { color-scheme: light; }
   :root[data-theme=dark] { color-scheme: dark; --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff;
-          --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; }
+          --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; --ring:#ece9e1; }
   * { box-sizing: border-box; }
   body { margin:0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink);
          background:var(--paper); -webkit-text-size-adjust: 100%; }
   main { position: relative; max-width: 34rem; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
   h1 { font-size: 2rem; font-weight: 750; margin: 0; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; flex:1; min-width:0; }
   .top { display:flex; align-items:center; gap:.5rem; margin: 0 0 1.75rem; }
-  h1 .logo { width: 2.1rem; height: 2.1rem; flex: none; margin-right: .2rem; }
+  h1 .logo { width: 2.1rem; height: 2.1rem; flex: none; margin-right: .2rem; box-shadow: 0 0 0 1.5px var(--ring); }   /* keeps the dark frame visible on a dark page */
   h2 { font-size: 1.05rem; font-weight: 700; margin: 2rem 0 .3rem; display:flex; align-items:center; gap:.5rem; }
   .sub { margin: 0 0 1.4rem; opacity: .8; }
   button { font-family: inherit; font-weight: 600; font-size: 1rem; line-height: 1; padding: .95rem 1.4rem; border-radius: .55rem;
            border: 2px solid var(--accent); background: var(--accent); color: var(--paper); cursor: pointer; }
   .row { display:flex; gap:1rem; flex-wrap: wrap; align-items:center; }
+  .opts.answers { margin: 0 0 1rem; }
+  .buttons { flex-wrap: nowrap; gap:.75rem; }
+  .buttons button { flex: 1 1 0; min-width: 0; padding-left: .75rem; padding-right: .75rem; }
+  button.alt { background: var(--tagbg); color: var(--accent); border-color: var(--tagbg); }
+  button.alt:disabled { opacity: .6; cursor: default; }
   .opts { display:flex; gap:.5rem; align-items:center; font-size: .95rem; cursor:pointer; }
   .opts input, li input { width:1.25rem; height:1.25rem; accent-color: var(--accent); flex: none; margin:0; }
   ul { list-style: none; padding: 0; margin: 0; }
   li { border-bottom: 1px solid var(--rule); }
   li > label, li > .failed { display:flex; gap:.75rem; align-items:center; padding:.6rem 0; cursor:pointer; }
   .what { flex: 1; min-width: 0; }
-  .nb { white-space: nowrap; }
   .meta { opacity:.65; font-size:.85rem; display:block; }
-  li > label .meta, li > .failed .meta { display:inline; font-size:inherit; }   /* "No 17,648 - Fri 27 Nov - Setter" on one line */
   .tag { font-weight: 700; font-size: .72rem; line-height: 1; border-radius: 1rem; padding:.28rem .5rem; flex:none;
          background: var(--tagbg); color: var(--accent); }
   .tag.a { width:1.5rem; height:1.5rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }
@@ -161,6 +165,10 @@ STYLE = """
   .selectwrap.block { display:flex; margin-top:.5rem; }
   .selectwrap.block select { width:100%; }
   .selectwrap svg { position:absolute; right:.875rem; top:.875rem; pointer-events:none; }
+  .body { transition: opacity .15s; }
+  .body.off { opacity: .4; }
+  .recips li:last-child { border-bottom: 0; }
+  button:disabled { opacity: .45; cursor: default; }
   .addrow { display:flex; gap:.5rem; padding:.9rem 0 .25rem; }
   .addrow input { flex:1; min-width:0; height:2.75rem; padding:0 .75rem; border-radius:.55rem; border:1px solid var(--rule);
          background:var(--paper); color:var(--ink); font:inherit; }
@@ -229,9 +237,10 @@ PAGE = """<!doctype html>
     <input type="hidden" name="form" value="1">
     <p class="readyhead">Ready to download</p>
     <ul id="ready">{ready}</ul>
-    <div class="row">
+    <label class="opts answers"><input type="checkbox" name="answers" value="1"> Include answers</label>
+    <div class="row buttons">
       <button type="submit">Download PDF</button>
-      <label class="opts"><input type="checkbox" name="answers" value="1"> Include answers</label>
+      <button type="button" id="emailnow" class="alt">Email now</button>
     </div>
     <div id="status" role="status"></div>
     <a class="emailstrip" href="/settings">{mail_icon}<span><strong>Weekly email:</strong> {email_summary}</span>{chevron}</a>
@@ -242,7 +251,9 @@ PAGE = """<!doctype html>
   // light/dark follows the system until the button is used, then remembers the choice
   const root = document.documentElement, themeBtn = document.getElementById('theme');
   const dark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  const showTheme = () => {{ themeBtn.textContent = dark() ? '☀' : '☾'; }};
+  const SUN = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>';
+  const MOON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>';
+  const showTheme = () => {{ themeBtn.innerHTML = dark() ? SUN : MOON; }};
   themeBtn.addEventListener('click', () => {{
     root.dataset.theme = dark() ? 'light' : 'dark';
     try {{ localStorage.theme = root.dataset.theme; }} catch (e) {{}}
@@ -250,6 +261,22 @@ PAGE = """<!doctype html>
   }});
   showTheme();
   const esc = s => s.replace(/[&<>"]/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
+  const emailNow = document.getElementById('emailnow');
+  emailNow.addEventListener('click', async () => {{
+    const s = document.getElementById('status');
+    const ticked = [...document.querySelectorAll('input[name=p]:checked')];
+    if (!ticked.length) {{ s.textContent = 'Tick at least one puzzle.'; return; }}
+    const body = new URLSearchParams();
+    ticked.forEach(i => body.append('p', i.value));
+    if (document.querySelector('input[name=answers]').checked) body.append('answers', '1');
+    emailNow.disabled = true; s.textContent = 'Emailing…';
+    try {{
+      const r = await fetch('/email/now', {{ method: 'POST', body }});
+      const j = await r.json().catch(() => ({{}}));
+      s.textContent = j.message || (r.ok ? 'Sent.' : 'Could not send that.');
+    }} catch (e) {{ s.textContent = 'Could not reach the server.'; }}
+    emailNow.disabled = false;
+  }});
   function busy() {{
     const s = document.getElementById('status');
     if (!document.querySelector('input[name=p]:checked')) {{ s.textContent = 'Tick at least one puzzle.'; return false; }}
@@ -261,14 +288,14 @@ PAGE = """<!doctype html>
   function ready() {{
     const ticked = [...document.querySelectorAll('input[name=p]:checked')];
     document.getElementById('ready').innerHTML = ticked.length
-      ? ticked.map(i => `<li>${{esc(i.dataset.title)}}<span class="meta">${{esc(i.dataset.date)}}</span></li>`).join('')
+      ? ticked.map(i => `<li>${{esc(i.dataset.name)}}<span class="meta">${{esc(i.dataset.sub)}}</span></li>`).join('')
       : '<li class="meta">Nothing ticked yet</li>';
   }}
   document.querySelectorAll('input[name=p]').forEach(i => i.addEventListener('change', ready));
-  // the heading picks which crosswords the list shows, 20 at a time
-  const PAGE_SIZE = 20;
+  // the heading picks which crosswords the list shows, 10 at a time
+  const PAGE_SIZE = 10;
   const type = document.getElementById('type'), menu = document.getElementById('menu');
-  const showMore = document.getElementById('showmore'), older = document.getElementById('more');
+  const showMore = document.getElementById('showmore');
   const rows = [...document.querySelectorAll('#puzzles > li')];
   let filter = 'all', shown = PAGE_SIZE;
   function paint() {{
@@ -279,8 +306,6 @@ PAGE = """<!doctype html>
       li.hidden = !match || n > shown;
     }});
     showMore.hidden = n <= shown;
-    older.hidden = filter === 'all' || n > shown;       // only once the saved ones are all showing
-    older.href = '/?source=' + encodeURIComponent(filter) + '&page=2';
   }}
   if (type && showMore) {{
     const opts = [...menu.querySelectorAll('[role=option]')];
@@ -334,37 +359,47 @@ SETTINGS_PAGE = """<!doctype html>
     <button type="submit" name="action" value="add" tabindex="-1" aria-hidden="true"
             style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">Save</button>
     <div class="setrow">
-      <span class="what"><strong>Weekly Crossy email</strong><span class="meta">{next_line}</span></span>
-      <label class="switch"><input type="checkbox" name="enabled" value="1" aria-label="Weekly Crossy email"{enabled}><span></span></label>
+      <span class="what"><strong>Weekly email</strong><span class="meta">{next_line}</span></span>
+      <label class="switch"><input type="checkbox" id="enabled" name="enabled" value="1" aria-label="Weekly email"{enabled}><span></span></label>
     </div>
 
-    <h2>Delivery</h2>
-    <fieldset class="days"><legend class="meta" style="position:absolute;left:-9999px">Day</legend>{days}</fieldset>
-    <span class="selectwrap block"><select name="time" aria-label="Time of day (UK time)">{times}</select>{down_icon}</span>
+    <div id="body" class="body{off}"{inert}>
+      <h2>Send to</h2>
+      <ul class="recips">{recipients}</ul>
+      <div class="addrow">
+        <input type="email" name="new_address" aria-label="Add an email address" placeholder="Add an email address" autocomplete="email">
+        <button type="submit" name="action" value="add" class="soft">Add</button>
+      </div>
 
-    <h2>Puzzles</h2>
-    <ul>{sources}</ul>
+      <h2>Delivery</h2>
+      <fieldset class="days"><legend class="meta" style="position:absolute;left:-9999px">Day</legend>{days}</fieldset>
+      <span class="selectwrap block"><select name="time" aria-label="Time of day (UK time)">{times}</select>{down_icon}</span>
 
-    <h2>Send to</h2>
-    <ul>{recipients}</ul>
-    <div class="addrow">
-      <input type="email" name="new_address" aria-label="Add an email address" placeholder="Add an email address" autocomplete="email">
-      <button type="submit" name="action" value="add" class="soft">Add</button>
-    </div>
-
-    <h2>Answers</h2>
-    <div class="setrow">
-      <span class="what">Include answers when published</span>
-      <label class="switch"><input type="checkbox" name="answers" value="1" aria-label="Include answers when published"{answers}><span></span></label>
+      <h2>Puzzles</h2>
+      <ul>{sources}</ul>
+      <div class="setrow">
+        <span class="what">Include answers</span>
+        <label class="switch"><input type="checkbox" name="answers" value="1" aria-label="Include answers"{answers}><span></span></label>
+      </div>
     </div>
 
     <div class="row" style="margin-top:1.75rem">
       <button type="submit" name="action" value="save">Save</button>
-      <button type="submit" name="action" value="test" class="ghost">Send a test now</button>
+      <button type="submit" name="action" value="test" id="testbtn" class="ghost"{test_disabled}>Send a test now</button>
     </div>
     <p class="meta" style="margin-top:.9rem">{last_line}</p>
   </form>
-</main></body></html>
+</main>
+<script>
+  // switching the weekly email off greys out and locks everything under it (they still save as they were)
+  const enabled = document.getElementById('enabled'), body = document.getElementById('body'), testBtn = document.getElementById('testbtn');
+  enabled.addEventListener('change', () => {{
+    body.classList.toggle('off', !enabled.checked);
+    body.inert = !enabled.checked;
+    testBtn.disabled = !enabled.checked;
+  }});
+</script>
+</body></html>
 """
 
 ERROR_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -424,8 +459,14 @@ class _Warn:
         return f'<div class="warntext" id="{self.id}" hidden>' + "<br>".join(_esc(m) for m in self.messages) + "</div>"
 
 
+def _sub_parts(s):
+    """The second line of a row: date, number, setter (setter only when there is one)."""
+    return [x for x in (s.get("date_label"), f"No {s['number']:,}" if s.get("number") else "", s.get("setter")) if x]
+
+
 def _puzzle_row(s, checked):
-    meta = "".join(f'<span class="nb"> - {_esc(b)}</span>' for b in [s.get("date_label") or "", s.get("setter") or ""] if b)
+    parts = _sub_parts(s)
+    meta = " - ".join(_esc(x) for x in parts)
     tags = ""
     if s.get("last_downloaded"):
         tags += '<span class="tag" title="Downloaded before">printed</span>'
@@ -434,24 +475,24 @@ def _puzzle_row(s, checked):
     elif s.get("solution_available"):
         tags += '<span class="tag a" title="Answers available">A</span>'
     return (f'<li data-source="{_esc(s["source"])}"><label>'
-            f'<input type="checkbox" name="p" value="{_esc(s["id"])}" data-title="{_esc(s["title"])}" '
-            f'data-date="{_esc(s.get("date_label"))}"{" checked" if checked else ""}>'
-            f'<span class="what">{_esc(s["title"]).replace(" No ", " No&nbsp;")}<span class="meta">{meta}</span></span>'
+            f'<input type="checkbox" name="p" value="{_esc(s["id"])}" data-name="{_esc(s.get("source_name") or s["title"])}" '
+            f'data-sub="{_esc(" - ".join(parts))}"{" checked" if checked else ""}>'
+            f'<span class="what">{_esc(s.get("source_name") or s["title"])}<span class="meta">{meta}</span></span>'
             f'{tags}</label></li>')
 
 
 def _failed_row(src, number, message):
     w = _Warn([message[:1].upper() + message[1:]])
     return (f'<li data-source="{_esc(src.key)}"><div class="failed"><span class="box"></span>'
-            f'<span class="what">{_esc(src.name)} No {int(number):,}<span class="meta"> - Couldn\'t fetch</span></span>'
+            f'<span class="what">{_esc(src.name)}<span class="meta">No {int(number):,} - Couldn\'t fetch</span></span>'
             f'{w.badge()}</div>{w.text()}</li>')
 
 
 def _ready_items(summaries):
     if not summaries:
         return '<li class="meta">Nothing ticked yet</li>'
-    return "".join(f'<li>{_esc(s["title"])}<span class="meta">{_esc(s.get("date_label"))}</span></li>'
-                   for s in summaries)
+    return "".join(f'<li>{_esc(s.get("source_name") or s["title"])}'
+                   f'<span class="meta">{_esc(" - ".join(_sub_parts(s)))}</span></li>' for s in summaries)
 
 
 def _listing(lib, items, failed, defaults, order, single=None, page=None):
@@ -483,8 +524,7 @@ def _listing(lib, items, failed, defaults, order, single=None, page=None):
                 '<button type="button" id="type" aria-haspopup="listbox" aria-expanded="false" '
                 'aria-label="Which crosswords to show"><span id="typelabel">All crosswords</span></button>'
                 f'<div class="menu" id="menu" role="listbox" hidden>{opts}</div></div></div>')
-        more = ('<button type="button" id="showmore" class="showmore" hidden>Show more</button>'
-                '<a class="more" id="more" href="#" hidden>Older puzzles</a>')
+        more = '<button type="button" id="showmore" class="showmore" hidden>Show more</button>'
     return f'{head}<ul id="puzzles">{body}</ul>{more}'
 
 
@@ -548,6 +588,8 @@ def render_settings(lib, notice="", bad=False):
         notice = f'<p class="notice{" bad" if bad else ""}" role="status">{_esc(notice)}</p>'
     return SETTINGS_PAGE.format(
         style=STYLE, slide=SLIDE_JS, notice=notice, next_line=_esc(next_line), enabled=" checked" if st["enabled"] else "",
+        off="" if st["enabled"] else " off", inert="" if st["enabled"] else " inert",
+        test_disabled="" if st["enabled"] else " disabled",
         days=days, times=times, sources=sources, recipients=recipients, answers=" checked" if st["answers"] else "",
         last_line=_esc(last_line), back_icon=CHEVRON.format(d="M15 18l-6-6 6-6"),
         down_icon=CHEVRON.format(d="M6 9l6 6 6-6").replace('width="18" height="18"', 'width="16" height="16"'))
@@ -632,6 +674,8 @@ class Handler(BaseHTTPRequestHandler):
                                   {"WWW-Authenticate": 'Basic realm="Crossy", charset="UTF-8"'})
             if url.path == "/settings":
                 return self._save_settings(library(), form)
+            if url.path == "/email/now":
+                return self._email_now(library(), form)
             return self._send(404, "Not found", "text/plain")
         except BrokenPipeError:
             pass
@@ -668,6 +712,33 @@ class Handler(BaseHTTPRequestHandler):
         if action in ("add",) or (form.get("remove") or [""])[0]:
             return self._send(303, "", headers={"Location": "/settings"})
         return self._send(303, "", headers={"Location": "/settings?done=saved"})
+
+    def _email_now(self, lib, form):
+        """"Email now" on the home page: the ticked puzzles, as one PDF, to the saved recipients."""
+        global LAST_NOW
+        ids = [i for v in form.get("p", []) for i in v.split(",") if i.strip()]
+        answers = bool((form.get("answers") or [""])[0])
+        st = emailer.load(lib.store, lib.sources)
+        if not ids:
+            return self._json({"message": "Tick at least one puzzle."}, 400)
+        if not st["recipients"]:
+            return self._json({"message": "Add an email address in the weekly email settings first."}, 400)
+        with EMAIL_LOCK:
+            now = dt.datetime.now().timestamp()
+            if now - LAST_NOW < 10:
+                return self._json({"message": "That only just went. Give it a few seconds."}, 429)
+            LAST_NOW = now
+        try:
+            _, notes = emailer.send_puzzles(lib, ids, answers, st["recipients"])
+        except (KeyError, NotFound, FetchError, pdfmod.LayoutError, ValueError) as e:
+            return self._json({"message": f"Couldn't make the sheet: {e}"}, 502)
+        except Exception as e:
+            print(f"Email now failed: {e}", file=sys.stderr, flush=True)
+            return self._json({"message": f"Couldn't send: {e}"}, 502)
+        lib.record_download(ids)
+        n = len(st["recipients"])
+        return self._json({"message": f"Emailed to {st['recipients'][0]}" + (f" and {n - 1} more" if n > 1 else "") + "."
+                                      + ((" " + " ".join(notes)) if notes else "")})
 
     def _email_run(self, lib, force=False):
         with EMAIL_LOCK:
