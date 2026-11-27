@@ -61,6 +61,7 @@ STYLE = """
          background:var(--paper); -webkit-text-size-adjust: 100%; }
   main { max-width: 34rem; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
   h1 { font-size: 2rem; font-weight: 750; margin: 0 0 .35rem; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; }
+  h1 .logo { width: 2.1rem; height: 2.1rem; flex: none; margin-right: .2rem; }
   h2 { font-size: 1.05rem; font-weight: 700; margin: 2rem 0 .3rem; display:flex; align-items:center; gap:.5rem; }
   .sub { margin: 0 0 1.4rem; opacity: .8; }
   button { font-family: inherit; font-weight: 600; font-size: 1rem; line-height: 1; padding: .95rem 1.4rem; border-radius: .55rem;
@@ -91,7 +92,7 @@ STYLE = """
   .readyhead { margin: 0 0 .3rem; font-weight: 650; }
   #ready { list-style: disc; padding-left: 1.25rem; margin: 0 0 1.3rem; }
   #ready li { border: 0; padding: .12rem 0; }
-  #ready .meta { display: inline; margin-left: .35rem; }
+  #ready .meta { display: block; }
   .listhead { margin: 2rem 0 .3rem; position: relative; display:flex; align-items:center; gap:.5rem; }
   .listhead select { appearance: none; -webkit-appearance: none; font-family: inherit; font-size: 1.05rem; font-weight: 700;
          color: var(--ink); background: transparent; border: 0; padding: .3rem 1.6rem .3rem 0; cursor: pointer;
@@ -117,7 +118,7 @@ PAGE = """<!doctype html>
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>{style}</style></head>
 <body><main>
-  <h1>Crossy {general}</h1>
+  <h1><img class="logo" src="/logo-mark.svg" width="34" height="34" alt="">Crossy {general}</h1>
   {general_text}
   <form action="/sheet.pdf" method="get" onsubmit="return busy()">
     <input type="hidden" name="form" value="1">
@@ -175,6 +176,7 @@ ERROR_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" conte
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 STATIC = {                       # served without a password, so phones can fetch the icons
     "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/logo-mark.svg": ("logo-mark.svg", "image/svg+xml"),
     "/favicon.ico": ("icon-192.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     "/icon-192.png": ("icon-192.png", "image/png"),
@@ -185,7 +187,7 @@ MANIFEST = {
     "name": "Crossy", "short_name": "Crossy",
     "description": "Guardian crosswords, ready to print",
     "start_url": "/", "scope": "/", "display": "standalone",
-    "background_color": "#faf8f3", "theme_color": "#052962",
+    "background_color": "#faf8f3", "theme_color": "#faf8f3",
     "icons": [
         {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
         {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},

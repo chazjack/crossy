@@ -50,7 +50,7 @@ class ServerTests(unittest.TestCase):
     def test_home_screen_app(self):
         page = self.get("/")[2].decode()
         for tag in ('rel="manifest" href="/manifest.webmanifest"', 'rel="apple-touch-icon" href="/apple-touch-icon.png"',
-                    'rel="icon" href="/icon.svg"'):
+                    'rel="icon" href="/icon.svg"', '<img class="logo" src="/logo-mark.svg"'):
             self.assertIn(tag, page)
         code, headers, body = self.get("/manifest.webmanifest")
         m = json.loads(body)
