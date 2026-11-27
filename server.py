@@ -64,12 +64,15 @@ def library():
 STYLE = """
   :root { color-scheme: light dark; --ink:#1b1b1b; --paper:#faf8f3; --rule:#d9d4c7; --accent:#052962;
           --warn:#8a4b00; --warnbg:#fff3df; --tagbg:#e8eef8; }
-  @media (prefers-color-scheme: dark) { :root { --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff;
+  @media (prefers-color-scheme: dark) { :root:not([data-theme=light]) { color-scheme: dark; --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff;
           --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; } }
+  :root[data-theme=light] { color-scheme: light; }
+  :root[data-theme=dark] { color-scheme: dark; --ink:#ece9e1; --paper:#171717; --rule:#3a3a3a; --accent:#8fb4ff;
+          --warn:#ffcf8a; --warnbg:#3a2a12; --tagbg:#1f2a3d; }
   * { box-sizing: border-box; }
   body { margin:0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink);
          background:var(--paper); -webkit-text-size-adjust: 100%; }
-  main { max-width: 34rem; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
+  main { position: relative; max-width: 34rem; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
   h1 { font-size: 2rem; font-weight: 750; margin: 0 0 .35rem; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; }
   h2 { font-size: 1.05rem; font-weight: 700; margin: 2rem 0 .3rem; display:flex; align-items:center; gap:.5rem; }
   .sub { margin: 0 0 1.4rem; opacity: .8; }
@@ -158,6 +161,9 @@ STYLE = """
   html:active-view-transition-type(back)::view-transition-old(root) { animation: .3s cubic-bezier(.2,.7,.2,1) both to-right;
          z-index: 1; }
   @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; } }
+  #theme { position:absolute; top:.6rem; right:.6rem; width:2.5rem; height:2.5rem; padding:0; font-size:1.15rem;
+         background:transparent; color:var(--ink); border:0; opacity:.6; }
+  #theme:hover, #theme:focus-visible { opacity:1; }
 """
 
 # Picks the slide direction: into /settings slides forward, out of it slides back.
@@ -190,6 +196,7 @@ PAGE = """<!doctype html>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Crossy">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>try {{ const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; }} catch (e) {{}}</script>
 <style>{style}</style>{slide}</head>
 <body><main>
   <h1>Crossy {general}</h1>
@@ -206,8 +213,19 @@ PAGE = """<!doctype html>
     <a class="emailstrip" href="/settings">{mail_icon}<span><strong>Weekly email:</strong> {email_summary}</span>{chevron}</a>
     {listing}
   </form>
+  <button id="theme" type="button" aria-label="Switch light or dark"></button>
 </main>
 <script>
+  // light/dark follows the system until the button is used, then remembers the choice
+  const root = document.documentElement, themeBtn = document.getElementById('theme');
+  const dark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const showTheme = () => {{ themeBtn.textContent = dark() ? '☀' : '☾'; }};
+  themeBtn.addEventListener('click', () => {{
+    root.dataset.theme = dark() ? 'light' : 'dark';
+    try {{ localStorage.theme = root.dataset.theme; }} catch (e) {{}}
+    showTheme();
+  }});
+  showTheme();
   const esc = s => s.replace(/[&<>"]/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
   function busy() {{
     const s = document.getElementById('status');
@@ -253,6 +271,7 @@ SETTINGS_PAGE = """<!doctype html>
 <meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#171717" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<script>try {{ const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; }} catch (e) {{}}</script>
 <style>{style}</style>{slide}</head>
 <body><main>
   <a class="back" href="/">{back_icon}Crossy</a>
