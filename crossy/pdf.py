@@ -4,6 +4,8 @@
 
 With answers=True, answer pages follow the puzzles (same half-page layout, grids filled in),
 for the puzzles whose answers are published. Puzzles without answers are left off those pages.
+A puzzle with a Fifteensquared write-up (puz["blog"], see crossy/blog.py) gets a full page
+instead: the filled grid and every clue with its answer and the blogger's explanation.
 """
 from __future__ import annotations
 
@@ -75,6 +77,10 @@ def date_label(puz, fmt="long"):
     if fmt == "short":
         return f"{d:%a} {d.day} {d:%b}"
     return f"{d:%A} {d.day} {d:%B %Y}"
+
+
+def explained(puz):
+    return bool((puz.get("blog") or {}).get("clues"))
 
 
 def has_answers(puz):
@@ -281,6 +287,177 @@ def _fold_line(c):
     c.setDash(); c.setStrokeGray(0)
 
 
+# ---------------------------------------------------------------- explained answers (full page)
+EXPL_SIZES = [9, 8.5, 8, 7.5, 7, 6.5]
+EXPL_MIN_ONE_PAGE = 6.5       # smallest font tried before running onto a second page
+EXPL_GRID_W = 72 * mm
+EXPL_SUB_H = 12               # the "Explanations from ..." line under the title
+
+
+def _marked_words(text, marks):
+    """Split text into (word, underlined) using the definition strings in marks."""
+    flags = [False] * len(text)
+    low = text.lower()
+    for m in marks or []:
+        m = m.strip()
+        if not m:
+            continue
+        i = low.find(m.lower())
+        if i >= 0:
+            for k in range(i, i + len(m)):
+                flags[k] = True
+    out = []
+    for mt in re.finditer(r"\S+", text):
+        word = mt.group()
+        core = [flags[k] for k in range(mt.start(), mt.end()) if text[k].isalnum()]
+        out.append((word, bool(core) and sum(core) * 2 >= len(core)))
+    return out
+
+
+def _wrap_marked(words, font, size, width):
+    lines, cur = [], []
+    for w, u in words:
+        trial = " ".join(x for x, _ in cur + [(w, u)])
+        if cur and stringWidth(trial, font, size) > width:
+            lines.append(cur)
+            cur = []
+        cur.append((w, u))
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _expl_items(puz, size, colw):
+    """[(kind, payload, height)] for every clue: answer line, clue (definition underlined), explanation."""
+    clues = (puz.get("blog") or {}).get("clues") or {}
+    lead = size * 1.2
+    numw = max([stringWidth(e["label"], "Helvetica-Bold", size) for e in puz["entries"]] +
+               [stringWidth("00", "Helvetica-Bold", size)]) + 3
+    textw = colw - numw
+    items = []
+    for title, direction in (("Across", "across"), ("Down", "down")):
+        items.append(("head", title, lead * 1.4))
+        for e in (x for x in puz["entries"] if x["direction"] == direction):
+            c = clues.get(e["id"]) or {}
+            ans = c.get("answer") or answer_text(e)
+            clue = c.get("clue") or clean(e["clue"])
+            clue_lines = _wrap_marked(_marked_words(clue, c.get("definitions")), "Helvetica-Oblique",
+                                      size, textw) if clue else []
+            expl = wrap(c.get("explanation") or "", "Helvetica", size, textw)
+            h = lead * (1 + len(clue_lines) + len(expl)) + size * 0.55
+            items.append(("clue", (e["label"], ans, clue_lines, expl, numw), h))
+    return items, lead
+
+
+def _flow(items, first_h, full_h):
+    """Columns of items: page 1 has a short first column (under the grid) and a full second
+    one; later pages have two full columns. Returns a list of pages, each a list of columns."""
+    pages, cols, col, used = [], [], [], 0.0
+    cap = first_h
+    for it in items:
+        if col and used + it[2] > cap:
+            cols.append(col); col, used = [], 0.0
+            if len(cols) == 2:
+                pages.append(cols); cols = []
+            cap = full_h
+        col.append(it); used += it[2]
+    cols.append(col)
+    pages.append(cols)
+    return pages
+
+
+def plan_explained(puz, w, h):
+    """(size, grid cell, pages) for the explained answers of one puzzle."""
+    colw = (w - COL_GAP * 2) / 2
+    full_h = h - HEADER_H - EXPL_SUB_H
+    cell = min(EXPL_GRID_W, colw) / puz["cols"]
+    first_h = full_h - cell * puz["rows"] - 5 * mm
+    best = None
+    for size in EXPL_SIZES:
+        items, _ = _expl_items(puz, size, colw)
+        pages = _flow(items, first_h, full_h)
+        best = (size, cell, pages, colw)
+        if len(pages) == 1 and all(sum(i[2] for i in col) <= (first_h if k == 0 else full_h)
+                                   for k, col in enumerate(pages[0])):
+            return best
+    return best
+
+
+def _draw_marked(c, words, x, y, font, size):
+    for k, (wd, u) in enumerate(words):
+        txt = wd + (" " if k < len(words) - 1 else "")
+        c.setFont(font, size)
+        c.drawString(x, y, txt)
+        ww = stringWidth(wd, font, size)
+        if u:
+            c.setLineWidth(0.5)
+            c.line(x, y - size * 0.15, x + ww, y - size * 0.15)
+        x += stringWidth(txt, font, size)
+
+
+def _draw_expl_col(c, col, x, y, size, lead):
+    for kind, payload, h in col:
+        if kind == "head":
+            c.setFillGray(0)
+            c.setFont("Helvetica-Bold", size + 1)
+            c.drawString(x, y - size - 1, payload.upper())
+        else:
+            label, ans, clue_lines, expl, numw = payload
+            yy = y - size
+            c.setFillGray(0)
+            c.setFont("Helvetica-Bold", size)
+            c.drawString(x, yy, label)
+            c.drawString(x + numw, yy, ans)
+            yy -= lead
+            c.setFillGray(0.3)
+            for ln in clue_lines:
+                _draw_marked(c, ln, x + numw, yy, "Helvetica-Oblique", size)
+                yy -= lead
+            c.setFillGray(0)
+            c.setFont("Helvetica", size)
+            for ln in expl:
+                c.drawString(x + numw, yy, ln)
+                yy -= lead
+        y -= h
+    c.setFillGray(0); c.setStrokeGray(0)
+
+
+def draw_explained(c, puz):
+    """The full-page explained answers for one puzzle (more pages if it runs on). Ends the page."""
+    x0, y_top, w, h = MARGIN, PAGE_H - MARGIN, PAGE_W - 2 * MARGIN, PAGE_H - 2 * MARGIN
+    size, cell, pages, colw = plan_explained(puz, w, h)
+    lead = size * 1.2
+    blog = puz.get("blog") or {}
+    when = date_label(puz)
+    byline = f"{puz['setter']}  ·  {when}" if puz.get("setter") else when
+    for pi, cols in enumerate(pages):
+        c.setFillGray(0)
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(x0, y_top - 13, f"Answers: {puz['title']}" + ("" if pi == 0 else " (continued)"))
+        c.setFont("Helvetica", 9)
+        c.drawRightString(x0 + w, y_top - 12, byline)
+        c.setLineWidth(0.6)
+        c.line(x0, y_top - 17, x0 + w, y_top - 17)
+        sub = "Answers and explanations from " + (blog.get("name") or "Fifteensquared")
+        if blog.get("blogger"):
+            sub += f", blogged by {blog['blogger']}"
+        c.setFont("Helvetica", 7.5)
+        c.setFillGray(0.35)
+        c.drawString(x0, y_top - HEADER_H - 6, sub)
+        if blog.get("url"):
+            c.drawRightString(x0 + w, y_top - HEADER_H - 6, blog["url"].replace("https://", ""))
+        c.setFillGray(0)
+        top = y_top - HEADER_H - EXPL_SUB_H
+        for ci, col in enumerate(cols):
+            x = x0 + ci * (colw + COL_GAP * 2)
+            y = top
+            if pi == 0 and ci == 0:
+                draw_grid(c, puz, x, top, cell, letters=True)
+                y = top - cell * puz["rows"] - 5 * mm
+            _draw_expl_col(c, col, x, y, size, lead)
+        c.showPage()
+
+
 def _draw_pages(c, puzzles, answers):
     for i, puz in enumerate(puzzles):
         if i and i % 2 == 0:
@@ -312,9 +489,12 @@ def build_pdf(puzzles, answers=False, canvas_factory=None):
     c.setAuthor("Crossy")
     _draw_pages(c, puzzles, answers=False)
     if answers:
-        with_answers = [p for p in puzzles if has_answers(p)]
-        if with_answers:
-            _draw_pages(c, with_answers, answers=True)
+        halves = [p for p in puzzles if has_answers(p) and not explained(p)]
+        if halves:
+            _draw_pages(c, halves, answers=True)
+        for p in puzzles:
+            if has_answers(p) and explained(p):
+                draw_explained(c, p)
     c.save()
     return buf.getvalue()
 

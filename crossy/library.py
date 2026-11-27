@@ -14,6 +14,7 @@ import datetime as dt
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from . import blog as blogmod
 from . import pdf as pdfmod
 from . import sources as srcmod
 from .sources import FetchError, NotFound
@@ -24,6 +25,8 @@ HISTORY_DAYS = 31
 MAX_PAGES = 6                 # listing pages read per refresh, at most
 STALE_AFTER = 30 * 60         # seconds before a series is checked again
 RETRY_AFTER_ERROR = 5 * 60
+BLOG_RECHECK = 3 * 3600       # seconds before looking again for a Fifteensquared post not found yet
+BLOG_GIVE_UP_DAYS = 60        # stop looking for a post this long after the puzzle came out
 
 
 def _parse_time(s):
@@ -35,8 +38,11 @@ def _parse_time(s):
 
 class Library:
     def __init__(self, store=None, sources=None, enabled=None, history_days=HISTORY_DAYS,
-                 stale_after=STALE_AFTER, workers=3, today=None):
+                 stale_after=STALE_AFTER, workers=3, today=None, blog=None):
         self.store = store or Store()
+        # The Fifteensquared blog explains the answers. It's on by default for the real Guardian
+        # series; a library built with other sources (tests) only uses one if given it.
+        self.blog = blog if blog is not None else (blogmod.Fifteensquared() if sources is None else None)
         self.sources = sources or srcmod.ALL
         self.enabled = enabled or [k for k in srcmod.enabled_keys() if k in self.sources]
         self.history_days = history_days
@@ -79,12 +85,18 @@ class Library:
             "has_tricks": bool(p.get("instructions")),
             "solution_available": bool(p.get("solution_available")),
             "solution_date": p.get("solution_date"), "url": p.get("url"),
+            "explained": blogmod.has_explanations(p),
+            "blog_url": (p.get("blog") or {}).get("url"),
         }
 
     # ------------------------------------------------------------ fetching
     def _fetch_and_save(self, src, number):
         """Fetch one puzzle, save its data and its own PDF, record it in the index."""
         puz = src.fetch(number)
+        old = self.store.read_puzzle(src.key, number) or {}
+        if old.get("blog"):                       # keep a Fifteensquared write-up we already have
+            blogmod.apply(puz, old["blog"], old["blog"].get("clues") or {})
+            puz["blog"] = old["blog"]
         self.store.write_puzzle(puz)
         try:
             self.store.write_pdf(src.key, number, pdfmod.build_pdf([puz]))
@@ -207,8 +219,47 @@ class Library:
         out.sort(key=lambda s: (s.get("date") or "", -order.get(s["source"], 99), s["number"]), reverse=True)
         return out
 
-    def get(self, pid):
-        """Full puzzle data. Fetched and saved if new; fetched again once its answers are due."""
+    def get(self, pid, explain=False):
+        """Full puzzle data. Fetched and saved if new; fetched again once its answers are due.
+        explain=True also looks for its Fifteensquared write-up (see explain())."""
+        puz = self._get(pid)
+        return self.explain(puz) if explain else puz
+
+    def _blog_due(self, puz):
+        if not self.blog or not blogmod.supports(puz) or blogmod.has_explanations(puz):
+            return False
+        if puz.get("date"):
+            d = dt.date.fromisoformat(puz["date"])
+            if d > self.today() or (self.today() - d).days > BLOG_GIVE_UP_DAYS:
+                return False
+        checked = _parse_time(puz.get("blog_checked_at"))
+        return not checked or (dt.datetime.now(dt.timezone.utc) - checked).total_seconds() >= BLOG_RECHECK
+
+    def explain(self, puz):
+        """Add the puzzle's Fifteensquared answers and explanations, if it's been blogged.
+        Its answers replace the Guardian's. Checked at most every few hours; never raises."""
+        if not self._blog_due(puz):
+            return puz
+        src = self.source(puz["source"])
+        with self._locks[src.key]:
+            puz["blog_checked_at"] = now_iso()
+            puz.pop("blog_error", None)
+            try:
+                post = self.blog.find(puz)
+                if post:
+                    blogmod.apply(puz, post, blogmod.parse(post.pop("html", ""), puz))
+            except FetchError as e:
+                puz["blog_error"] = str(e)
+            except Exception as e:                # a strange post mustn't break the sheet
+                puz["blog_error"] = f"{type(e).__name__}: {e}"
+            self.store.write_puzzle(puz)
+            idx = self._index(src.key)
+            if str(puz["number"]) in idx["puzzles"]:
+                idx["puzzles"][str(puz["number"])] = self._summary_fields(puz)
+                self._save_index(src.key)
+        return puz
+
+    def _get(self, pid):
         src, number = self.split_id(pid)
         with self._locks[src.key]:
             puz = self.store.read_puzzle(src.key, number)
@@ -262,12 +313,17 @@ class Library:
     def sheet(self, ids, answers=False):
         """(pdf_bytes, filename, notes) for the puzzles, in the order given.
         Raises FetchError/KeyError naming the puzzle that couldn't be fetched."""
-        puzzles = [self.get(pid) for pid in ids]
+        puzzles = [self.get(pid, explain=answers) for pid in ids]
         notes = []
         if answers:
             missing = [p["title"] for p in puzzles if not pdfmod.has_answers(p)]
             if missing:
                 notes.append("Answers aren't published yet for " + ", ".join(missing) + ".")
+            unexplained = [p["title"] for p in puzzles if pdfmod.has_answers(p) and self.blog
+                           and blogmod.supports(p) and not blogmod.has_explanations(p)]
+            if unexplained:
+                notes.append("No Fifteensquared explanations yet for " + ", ".join(unexplained) +
+                             ", so those answers are the Guardian's.")
         data = pdfmod.build_pdf(puzzles, answers=answers)
         name = "crossy_" + "_".join(f"{self.sources[p['source']].short}{p['number']}" for p in puzzles)
         if answers and any(pdfmod.has_answers(p) for p in puzzles):
