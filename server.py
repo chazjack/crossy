@@ -9,7 +9,7 @@ A small private web page for downloading the crossword sheet on demand.
 
 Environment:
   PORT             set by Railway
-  SITE_PASSWORD    the password the browser asks for (any username works)
+  SITE_PASSWORD    the password the browser asks for (any username works); the page stays locked without it
 """
 import base64, hmac, html, os, sys, tempfile, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -110,8 +110,6 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _authed(self):
-        if not PASSWORD:
-            return True
         h = self.headers.get("Authorization", "")
         if not h.startswith("Basic "):
             return False
@@ -125,6 +123,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/health":
             return self._send(200, "ok", "text/plain")
+        if not PASSWORD:                    # closed until a password is set
+            return self._send(503, "Locked: set SITE_PASSWORD on this service in Railway.", "text/plain")
         if not self._authed():
             return self._send(401, "Password needed.", "text/plain",
                               {"WWW-Authenticate": 'Basic realm="Crossy", charset="UTF-8"'})
@@ -161,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(os.environ.get("PORT", "8000"))
     if not PASSWORD:
-        print("Warning: SITE_PASSWORD isn't set, so the page is open to anyone with the link.", flush=True)
+        print("SITE_PASSWORD isn't set, so the page stays locked until you add it.", flush=True)
     print(f"Crossy listening on port {port}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
