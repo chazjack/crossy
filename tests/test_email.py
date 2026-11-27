@@ -132,6 +132,7 @@ class SettingsServerTests(unittest.TestCase):
         except FileNotFoundError:
             pass
         server.LAST_TEST = 0.0
+        server.LAST_NOW = 0.0
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *a, **k):
@@ -163,7 +164,7 @@ class SettingsServerTests(unittest.TestCase):
     def test_settings_page_shows_defaults(self):
         code, _, page = self.req("/settings")
         self.assertEqual(code, 200)
-        self.assertIn('name="enabled" value="1" aria-label="Weekly Crossy email" checked', page)
+        self.assertIn('name="enabled" value="1" aria-label="Weekly email" checked', page)
         self.assertIn('<input type="radio" name="day" value="4" checked>', page)
         self.assertIn('<option value="06:30" selected>6:30am</option>', page)
         self.assertIn('value="guardian-quick" checked', page)
@@ -171,6 +172,31 @@ class SettingsServerTests(unittest.TestCase):
         self.assertNotIn('value="guardian-quiptic" checked', page)
         self.assertIn("me@example.com", page)               # EMAIL_TO seeds the list
         self.assertIn('placeholder="Add an email address"', page)
+        self.assertNotIn('class="body off"', page)
+        self.assertLess(page.index("Send to"), page.index("Delivery"))          # who it goes to comes first
+        self.assertLess(page.index("Puzzles"), page.index("Include answers"))    # answers is one line under puzzles
+        self.assertNotIn("<h2>Answers</h2>", page)
+
+    def test_settings_page_when_off_is_locked(self):
+        emailer.save(self.lib.store, dict(emailer.load(self.lib.store), enabled=False))
+        page = self.req("/settings")[2]
+        self.assertIn('class="body off" inert', page)
+        self.assertRegex(page, r'id="testbtn"[^>]*disabled')
+
+    def test_email_now_sends_the_ticked_puzzles(self):
+        with mock.patch.object(emailer, "send", return_value={"id": "x"}) as send:
+            code, _, body = self.req("/email/now", {"p": ["guardian-quick-17648", "guardian-quick-cryptic-138"], "answers": "1"})
+            self.assertEqual(code, 200)
+            self.assertIn("Emailed to me@example.com", body)
+            to, subject, text, (name, pdf), html_text = send.call_args[0]
+            self.assertEqual((to, subject), (["me@example.com"], "Quick crossword 17,648 & Quick Cryptic 138"))
+            self.assertTrue(pdf.startswith(b"%PDF"))
+            self.assertEqual(self.req("/email/now", {"p": ["guardian-quick-17648"]})[0], 429)   # not twice in a breath
+
+    def test_email_now_needs_a_tick(self):
+        with mock.patch.object(emailer, "send") as send:
+            self.assertEqual(self.req("/email/now", {})[0], 400)
+        send.assert_not_called()
 
     def test_save_add_and_remove(self):
         code, headers, _ = self.req("/settings", self.form(day="5", time="08:00", answers="1",
