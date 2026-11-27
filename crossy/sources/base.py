@@ -39,9 +39,19 @@ class NotFound(FetchError):
     pass
 
 
-def http_get(url, timeout=20, retries=1):
+def _retry_after(e, default):
+    try:
+        return min(30.0, max(1.0, float(e.headers.get("Retry-After"))))
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+
+def http_get(url, timeout=20, retries=3, sleep=time.sleep):
+    """Fetch a page as text. Retries server errors and timeouts, and waits when the site says
+    "too many requests" (429), as the Guardian does if a month of puzzles is fetched at once."""
     last = None
     for attempt in range(retries + 1):
+        wait = 1.5 * (attempt + 1)
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -49,13 +59,17 @@ def http_get(url, timeout=20, retries=1):
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 raise NotFound(f"{url} doesn't exist (404)")
-            last = FetchError(f"{url} answered {e.code}")
-            if e.code < 500:
-                break
+            if e.code == 429:
+                last = FetchError(f"the Guardian asked us to slow down (429) at {url}")
+                wait = _retry_after(e, 5.0 * (attempt + 1))
+            else:
+                last = FetchError(f"{url} answered {e.code}")
+                if e.code < 500:
+                    break
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             last = FetchError(f"couldn't reach {url.split('/')[2]} ({getattr(e, 'reason', e)})")
         if attempt < retries:
-            time.sleep(1.5)
+            sleep(wait)
     raise last
 
 

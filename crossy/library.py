@@ -35,7 +35,7 @@ def _parse_time(s):
 
 class Library:
     def __init__(self, store=None, sources=None, enabled=None, history_days=HISTORY_DAYS,
-                 stale_after=STALE_AFTER, workers=6, today=None):
+                 stale_after=STALE_AFTER, workers=3, today=None):
         self.store = store or Store()
         self.sources = sources or srcmod.ALL
         self.enabled = enabled or [k for k in srcmod.enabled_keys() if k in self.sources]
