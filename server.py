@@ -74,7 +74,8 @@ STYLE = """
   body { margin:0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink);
          background:var(--paper); -webkit-text-size-adjust: 100%; }
   main { position: relative; max-width: 34rem; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
-  h1 { font-size: 2rem; font-weight: 750; margin: 0 0 .35rem; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; }
+  h1 { font-size: 2rem; font-weight: 750; margin: 0; letter-spacing: -.02em; display:flex; align-items:center; gap:.5rem; flex:1; min-width:0; }
+  .top { display:flex; align-items:center; gap:.5rem; margin: 0 0 1.75rem; }
   h1 .logo { width: 2.1rem; height: 2.1rem; flex: none; margin-right: .2rem; }
   h2 { font-size: 1.05rem; font-weight: 700; margin: 2rem 0 .3rem; display:flex; align-items:center; gap:.5rem; }
   .sub { margin: 0 0 1.4rem; opacity: .8; }
@@ -87,7 +88,9 @@ STYLE = """
   li { border-bottom: 1px solid var(--rule); }
   li > label, li > .failed { display:flex; gap:.75rem; align-items:center; padding:.6rem 0; cursor:pointer; }
   .what { flex: 1; min-width: 0; }
+  .nb { white-space: nowrap; }
   .meta { opacity:.65; font-size:.85rem; display:block; }
+  li > label .meta, li > .failed .meta { display:inline; font-size:inherit; }   /* "No 17,648 - Fri 27 Nov - Setter" on one line */
   .tag { font-weight: 700; font-size: .72rem; line-height: 1; border-radius: 1rem; padding:.28rem .5rem; flex:none;
          background: var(--tagbg); color: var(--accent); }
   .tag.a { width:1.5rem; height:1.5rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }
@@ -108,11 +111,25 @@ STYLE = """
   #ready li { border: 0; padding: .12rem 0; }
   #ready .meta { display: block; }
   .listhead { margin: 2rem 0 .3rem; position: relative; display:flex; align-items:center; gap:.5rem; }
-  .listhead select { appearance: none; -webkit-appearance: none; font-family: inherit; font-size: 1.05rem; font-weight: 700;
-         color: var(--ink); background: transparent; border: 0; padding: .3rem 1.6rem .3rem 0; cursor: pointer;
-         background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-         background-position: calc(100% - .75rem) 55%, calc(100% - .4rem) 55%; background-size: .35rem .35rem; background-repeat: no-repeat; }
-  .listhead select:focus-visible { outline: 2px solid var(--accent); border-radius: .3rem; }
+  .picker { position: relative; }
+  #type { display:inline-flex; align-items:center; margin-left:-.6rem; padding:.35rem .6rem; cursor:pointer;
+         border:0; border-radius:.55rem; background:transparent; color:var(--ink); font-size:1.05rem; font-weight:700; line-height:1.3; }
+  #type:hover, #type[aria-expanded=true] { background: var(--tagbg); color: var(--accent); }
+  #type:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .menu { position:absolute; z-index:5; top:calc(100% + .3rem); left:-.6rem; min-width:15rem; max-width:calc(100vw - 2.5rem);
+         padding:.3rem; border:1px solid var(--rule); border-radius:.8rem; background:var(--paper);
+         box-shadow:0 10px 28px rgba(0,0,0,.14), 0 2px 6px rgba(0,0,0,.06); }
+  .menu[hidden] { display:none; }
+  .menu button { display:flex; align-items:center; justify-content:space-between; gap:1rem; width:100%; padding:.7rem .8rem;
+         border:0; border-radius:.55rem; background:transparent; color:var(--ink); font-size:.97rem; font-weight:500;
+         line-height:1.2; text-align:left; }
+  .menu button:hover, .menu button:focus-visible { background:var(--tagbg); outline:none; }
+  .menu button[aria-selected=true] { color:var(--accent); font-weight:700; }
+  .menu .count { opacity:.6; font-size:.85rem; font-weight:500; }
+  .showmore { display:block; width:100%; margin-top:.9rem; height:2.75rem; padding:0 1rem; border-radius:.55rem; border:0;
+         background:var(--tagbg); color:var(--accent); font-weight:600; }
+  .showmore:hover { filter: brightness(.97); }
+  .showmore[hidden] { display:none; }
   li[hidden] { display: none; }
   .emailstrip { display:flex; align-items:center; gap:.75rem; margin-top:1.4rem; padding:.75rem .9rem; border-radius:.55rem;
          background: var(--tagbg); color: var(--accent); text-decoration:none; font-size:.95rem; }
@@ -141,6 +158,8 @@ STYLE = """
   .selectwrap { position:relative; display:inline-flex; }
   .selectwrap select { appearance:none; -webkit-appearance:none; height:2.75rem; padding:0 2.75rem 0 .9rem; border-radius:.55rem;
          border:1px solid var(--rule); background:var(--paper); color:var(--ink); font:inherit; font-weight:600; cursor:pointer; }
+  .selectwrap.block { display:flex; margin-top:.5rem; }
+  .selectwrap.block select { width:100%; }
   .selectwrap svg { position:absolute; right:.875rem; top:.875rem; pointer-events:none; }
   .addrow { display:flex; gap:.5rem; padding:.9rem 0 .25rem; }
   .addrow input { flex:1; min-width:0; height:2.75rem; padding:0 .75rem; border-radius:.55rem; border:1px solid var(--rule);
@@ -163,8 +182,8 @@ STYLE = """
   html:active-view-transition-type(back)::view-transition-old(root) { animation: .3s cubic-bezier(.2,.7,.2,1) both to-right;
          z-index: 1; }
   @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; } }
-  #theme { position:absolute; top:.6rem; right:.6rem; width:2.5rem; height:2.5rem; padding:0; font-size:1.15rem;
-         background:transparent; color:var(--ink); border:0; opacity:.6; }
+  #theme { flex:none; width:2.5rem; height:2.5rem; margin-right:-.6rem; padding:0; font-size:1.15rem; line-height:1;
+         display:flex; align-items:center; justify-content:center; background:transparent; color:var(--ink); border:0; opacity:.6; }
   #theme:hover, #theme:focus-visible { opacity:1; }
 """
 
@@ -201,7 +220,10 @@ PAGE = """<!doctype html>
 <script>try {{ const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; }} catch (e) {{}}</script>
 <style>{style}</style>{slide}</head>
 <body><main>
-  <h1><img class="logo" src="/logo-mark.svg" width="34" height="34" alt="">Crossy {general}</h1>
+  <div class="top">
+    <h1><img class="logo" src="/logo-mark.svg" width="34" height="34" alt="">Crossy {general}</h1>
+    <button id="theme" type="button" aria-label="Switch light or dark"></button>
+  </div>
   {general_text}
   <form action="/sheet.pdf" method="get" onsubmit="return busy()">
     <input type="hidden" name="form" value="1">
@@ -215,7 +237,6 @@ PAGE = """<!doctype html>
     <a class="emailstrip" href="/settings">{mail_icon}<span><strong>Weekly email:</strong> {email_summary}</span>{chevron}</a>
     {listing}
   </form>
-  <button id="theme" type="button" aria-label="Switch light or dark"></button>
 </main>
 <script>
   // light/dark follows the system until the button is used, then remembers the choice
@@ -244,16 +265,46 @@ PAGE = """<!doctype html>
       : '<li class="meta">Nothing ticked yet</li>';
   }}
   document.querySelectorAll('input[name=p]').forEach(i => i.addEventListener('change', ready));
-  // the heading picks which crosswords the list shows
-  const type = document.getElementById('type');
-  if (type) type.addEventListener('change', () => {{
-    document.querySelectorAll('#puzzles > li').forEach(li => {{
-      li.hidden = type.value !== 'all' && li.dataset.source !== type.value;
+  // the heading picks which crosswords the list shows, 20 at a time
+  const PAGE_SIZE = 20;
+  const type = document.getElementById('type'), menu = document.getElementById('menu');
+  const showMore = document.getElementById('showmore'), older = document.getElementById('more');
+  const rows = [...document.querySelectorAll('#puzzles > li')];
+  let filter = 'all', shown = PAGE_SIZE;
+  function paint() {{
+    let n = 0;
+    rows.forEach(li => {{
+      const match = filter === 'all' || li.dataset.source === filter;
+      if (match) n++;
+      li.hidden = !match || n > shown;
     }});
-    const more = document.getElementById('more');
-    more.hidden = type.value === 'all';
-    more.href = '/?source=' + encodeURIComponent(type.value) + '&page=2';
-  }});
+    showMore.hidden = n <= shown;
+    older.hidden = filter === 'all' || n > shown;       // only once the saved ones are all showing
+    older.href = '/?source=' + encodeURIComponent(filter) + '&page=2';
+  }}
+  if (type && showMore) {{
+    const opts = [...menu.querySelectorAll('[role=option]')];
+    const close = (focus) => {{ menu.hidden = true; type.setAttribute('aria-expanded', 'false'); if (focus) type.focus(); }};
+    const open = () => {{ menu.hidden = false; type.setAttribute('aria-expanded', 'true');
+                         (opts.find(o => o.getAttribute('aria-selected') === 'true') || opts[0]).focus(); }};
+    type.addEventListener('click', () => menu.hidden ? open() : close());
+    opts.forEach(o => o.addEventListener('click', () => {{
+      filter = o.dataset.value; shown = PAGE_SIZE;
+      opts.forEach(x => x.setAttribute('aria-selected', String(x === o)));
+      document.getElementById('typelabel').textContent = o.dataset.label;
+      close(true); paint();
+    }}));
+    menu.addEventListener('keydown', e => {{
+      const i = opts.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') {{ e.preventDefault(); opts[(i + 1) % opts.length].focus(); }}
+      else if (e.key === 'ArrowUp') {{ e.preventDefault(); opts[(i - 1 + opts.length) % opts.length].focus(); }}
+      else if (e.key === 'Escape') {{ e.preventDefault(); close(true); }}
+      else if (e.key === 'Tab') close(false);
+    }});
+    document.addEventListener('click', e => {{ if (!menu.hidden && !e.target.closest('.picker')) close(false); }});
+    showMore.addEventListener('click', () => {{ shown += PAGE_SIZE; paint(); }});
+    paint();
+  }}
   // a "!" opens its explanation underneath
   document.querySelectorAll('details.warn').forEach(d => d.addEventListener('toggle', () => {{
     const t = document.getElementById(d.dataset.for);
@@ -287,10 +338,9 @@ SETTINGS_PAGE = """<!doctype html>
       <label class="switch"><input type="checkbox" name="enabled" value="1" aria-label="Weekly Crossy email"{enabled}><span></span></label>
     </div>
 
-    <h2>When</h2>
+    <h2>Delivery</h2>
     <fieldset class="days"><legend class="meta" style="position:absolute;left:-9999px">Day</legend>{days}</fieldset>
-    <label class="setrow"><span class="what"><strong>Time</strong></span>
-      <span class="selectwrap"><select name="time" aria-label="Time">{times}</select>{down_icon}</span></label>
+    <span class="selectwrap block"><select name="time" aria-label="Time of day (UK time)">{times}</select>{down_icon}</span>
 
     <h2>Puzzles</h2>
     <ul>{sources}</ul>
@@ -375,7 +425,7 @@ class _Warn:
 
 
 def _puzzle_row(s, checked):
-    meta = " · ".join(b for b in [s.get("date_label") or "", s.get("setter") or ""] if b)
+    meta = "".join(f'<span class="nb"> - {_esc(b)}</span>' for b in [s.get("date_label") or "", s.get("setter") or ""] if b)
     tags = ""
     if s.get("last_downloaded"):
         tags += '<span class="tag" title="Downloaded before">printed</span>'
@@ -386,14 +436,14 @@ def _puzzle_row(s, checked):
     return (f'<li data-source="{_esc(s["source"])}"><label>'
             f'<input type="checkbox" name="p" value="{_esc(s["id"])}" data-title="{_esc(s["title"])}" '
             f'data-date="{_esc(s.get("date_label"))}"{" checked" if checked else ""}>'
-            f'<span class="what">{_esc(s["title"])}<span class="meta">{_esc(meta)}</span></span>'
+            f'<span class="what">{_esc(s["title"]).replace(" No ", " No&nbsp;")}<span class="meta">{meta}</span></span>'
             f'{tags}</label></li>')
 
 
 def _failed_row(src, number, message):
     w = _Warn([message[:1].upper() + message[1:]])
     return (f'<li data-source="{_esc(src.key)}"><div class="failed"><span class="box"></span>'
-            f'<span class="what">{_esc(src.name)} No {int(number):,}<span class="meta">Couldn\'t fetch</span></span>'
+            f'<span class="what">{_esc(src.name)} No {int(number):,}<span class="meta"> - Couldn\'t fetch</span></span>'
             f'{w.badge()}</div>{w.text()}</li>')
 
 
@@ -423,10 +473,18 @@ def _listing(lib, items, failed, defaults, order, single=None, page=None):
         counts = {}
         for s in items:
             counts[s["source"]] = counts.get(s["source"], 0) + 1
-        opts = '<option value="all">All crosswords</option>' + "".join(
-            f'<option value="{_esc(k)}">{_esc(lib.source(k).name)} ({counts.get(k, 0)})</option>' for k in lib.enabled)
-        head = f'<div class="listhead"><select id="type" aria-label="Which crosswords to show">{opts}</select></div>'
-        more = '<a class="more" id="more" href="#" hidden>Older puzzles</a>'
+        def option(value, label, count=None, selected=False):
+            n = f'<span class="count">{count}</span>' if count is not None else ""
+            return (f'<button type="button" role="option" data-value="{_esc(value)}" data-label="{_esc(label)}" '
+                    f'aria-selected="{"true" if selected else "false"}"><span>{_esc(label)}</span>{n}</button>')
+        opts = option("all", "All crosswords", selected=True) + "".join(
+            option(k, lib.source(k).name, counts.get(k, 0)) for k in lib.enabled)
+        head = ('<div class="listhead"><div class="picker">'
+                '<button type="button" id="type" aria-haspopup="listbox" aria-expanded="false" '
+                'aria-label="Which crosswords to show"><span id="typelabel">All crosswords</span></button>'
+                f'<div class="menu" id="menu" role="listbox" hidden>{opts}</div></div></div>')
+        more = ('<button type="button" id="showmore" class="showmore" hidden>Show more</button>'
+                '<a class="more" id="more" href="#" hidden>Older puzzles</a>')
     return f'{head}<ul id="puzzles">{body}</ul>{more}'
 
 
@@ -471,7 +529,7 @@ def render_settings(lib, notice="", bad=False):
                     for t in emailer.TIMES)
     sources = "".join(
         f'<li><label><input type="checkbox" name="source" value="{_esc(k)}"{" checked" if k in st["sources"] else ""}>'
-        f'<span class="what">{_esc(lib.source(k).name.replace("Guardian ", ""))}</span></label></li>' for k in lib.enabled)
+        f'<span class="what">{_esc(lib.source(k).name)}</span></label></li>' for k in lib.enabled)
     x_icon = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
               'stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>')
     recipients = "".join(
