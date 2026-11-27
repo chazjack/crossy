@@ -1,3 +1,4 @@
+import base64
 import datetime as dt
 import json
 import os
@@ -40,6 +41,28 @@ class ScheduleTests(unittest.TestCase):
         self.assertFalse(emailer.due(self.settings(enabled=False), at(2026, 12, 4, 6, 30))[0])
         self.assertFalse(emailer.due(self.settings(sources=[]), at(2026, 12, 4, 6, 30))[0])
         self.assertFalse(emailer.due(self.settings(recipients=[]), at(2026, 12, 4, 6, 30))[0])
+
+    def test_logo_goes_inline_in_the_resend_request(self):
+        sent = {}
+
+        class Reply:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"id": "x"}'
+        def fake_urlopen(req, timeout=0):
+            sent.update(json.loads(req.data))
+            return Reply()
+        with mock.patch.dict(os.environ, {"RESEND_API_KEY": "k", "EMAIL_FROM": "a@b.co"}), \
+                mock.patch.object(emailer.urllib.request, "urlopen", fake_urlopen):
+            emailer.send(["me@example.com"], "S", "hi", ("sheet.pdf", b"%PDF"), emailer.html_body(["hi"]))
+        by_name = {a["filename"]: a for a in sent["attachments"]}
+        self.assertEqual(by_name["crossy-logo.png"]["content_id"], "crossy-logo")
+        self.assertTrue(base64.b64decode(by_name["crossy-logo.png"]["content"]).startswith(b"\x89PNG"))
+        self.assertIn("sheet.pdf", by_name)
+        self.assertIn("cid:crossy-logo", sent["html"])
+
+    def test_times_run_into_the_evening(self):
+        self.assertEqual((emailer.TIMES[0], emailer.TIMES[-1]), ("06:00", "21:30"))
 
     def test_next_send(self):
         s = self.settings(day=4, time="06:30")
@@ -169,9 +192,10 @@ class SettingsServerTests(unittest.TestCase):
         with mock.patch.object(emailer, "send", return_value={"id": "x"}) as send:
             code, headers, _ = self.req("/settings", self.form(action="test"))
             self.assertEqual((code, headers["Location"]), (303, "/settings?done=sent"))
-            to, subject, text, (name, pdf) = send.call_args[0]
+            to, subject, text, (name, pdf), html_text = send.call_args[0]
             self.assertEqual((to, subject), (["me@example.com"], "Quick crossword 17,648 & Quick Cryptic 138"))
             self.assertTrue(pdf.startswith(b"%PDF"))
+            self.assertIn('src="cid:crossy-logo"', html_text)           # the logo is in the email
             self.assertIsNone(emailer.load(self.lib.store)["last_sent"])   # a test doesn't use up the day
             self.assertEqual(self.req("/settings", self.form(action="test"))[0], 429)   # one a minute
 

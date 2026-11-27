@@ -70,8 +70,8 @@ class ServerTests(unittest.TestCase):
         self.assertRegex(page, r'value="guardian-quick-cryptic-138" [^>]*checked')
         self.assertNotRegex(page, r'value="guardian-quiptic-1409" [^>]*checked')
         # one list, newest first, with a dropdown to pick the type
-        self.assertIn('<option value="all">All crosswords</option>', page)
-        self.assertIn('<option value="guardian-quiptic">Guardian Quiptic (', page)
+        self.assertIn('data-value="all" data-label="All crosswords"', page)
+        self.assertIn('data-value="guardian-quiptic" data-label="Guardian Quiptic"', page)
         order = [page.index(f'value="{i}"') for i in
                  ("guardian-quick-17648", "guardian-quick-17647", "guardian-quiptic-1409", "guardian-quick-cryptic-138")]
         self.assertEqual(order, sorted(order))
@@ -86,7 +86,7 @@ class ServerTests(unittest.TestCase):
         self.lib.refresh(["guardian-quiptic"], force=True)
         try:
             page = self.get("/")[2].decode()
-            self.assertIn("Guardian Quiptic No 1,410<span class=\"meta\">Couldn't fetch</span>", page)
+            self.assertIn("Guardian Quiptic No 1,410<span class=\"meta\"> - Couldn't fetch</span>", page)
             self.assertIn('class="warntext"', page)
             self.assertIn("No puzzle data on the page", page)
         finally:
